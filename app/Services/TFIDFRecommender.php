@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Laptop;
 use Illuminate\Support\Collection;
 use Sastrawi\Stemmer\StemmerFactory;
+use Illuminate\Support\Facades\Log;
 
 class TFIDFRecommender
 {
@@ -24,18 +25,26 @@ class TFIDFRecommender
         $allDocsForIDF = collect();
         $laptopDocs = collect();
 
+        // Proses dokumen laptop dan review untuk IDF dan TF
         foreach ($laptops as $laptop) {
             $specsText = $this->combineSpecs($laptop);
-            $specsTerms = $this->tokenize($specsText, 3); // Bobot 3x
+            $specsTerms = $this->tokenize($specsText, 3);
             $allDocsForIDF->push($specsTerms);
 
             $reviewTerms = [];
             foreach ($laptop->reviews as $review) {
                 $reviewText = strtolower($review->review);
 
-                // Filter berdasarkan konteks positif/negatif
                 if ($this->isNegativeSentence($reviewText)) continue;
-                if (! $this->isPositiveSentence($reviewText)) continue;
+                if (!$this->isPositiveSentence($reviewText)) continue;
+
+                if ($this->reviewMismatchWithSpecs($reviewText, $laptop)) {
+                    Log::channel('recommendations')->info('Review dibuang karena mismatch', [
+                        'laptop_id' => $laptop->id,
+                        'review' => $review->review,
+                    ]);
+                    continue;
+                }
 
                 $revTerms = $this->tokenize($review->review);
                 $allDocsForIDF->push($revTerms);
@@ -46,9 +55,59 @@ class TFIDFRecommender
         }
 
         $idf = $this->calculateIDF($allDocsForIDF);
-
         $queryTerms = $this->tokenize($query);
         $scores = $this->calculateScores($laptopDocs, $queryTerms, $idf, $contextWeights);
+
+        // Return collection dengan skor
+        return $this->getSortedResults($scores, $contextWeights)
+            ->map(function ($laptop) use ($scores) {
+                $laptop->tfidf_score = $scores[$laptop->id] ?? 0;
+                return $laptop;
+            });
+
+        foreach ($laptops as $laptop) {
+            $specsText = $this->combineSpecs($laptop);
+            $specsTerms = $this->tokenize($specsText, 3);
+            $allDocsForIDF->push($specsTerms);
+
+            $reviewTerms = [];
+            foreach ($laptop->reviews as $review) {
+                $reviewText = strtolower($review->review);
+
+                if ($this->isNegativeSentence($reviewText)) continue;
+                if (!$this->isPositiveSentence($reviewText)) continue;
+
+                if ($this->reviewMismatchWithSpecs($reviewText, $laptop)) {
+                    Log::channel('recommendations')->info('Review dibuang karena mismatch', [
+                        'laptop_id' => $laptop->id,
+                        'review' => $review->review,
+                    ]);
+                    continue;
+                }
+
+                $revTerms = $this->tokenize($review->review);
+                $allDocsForIDF->push($revTerms);
+                $reviewTerms = array_merge($reviewTerms, $revTerms);
+            }
+
+            $laptopDocs[$laptop->id] = array_merge($specsTerms, $reviewTerms);
+        }
+
+        $idf = $this->calculateIDF($allDocsForIDF);
+        $queryTerms = $this->tokenize($query);
+        $scores = $this->calculateScores($laptopDocs, $queryTerms, $idf, $contextWeights);
+        $filteredResults = $this->getSortedResults($scores, $contextWeights);
+
+        $topLaptopIds = $filteredResults->pluck('id')->mapWithKeys(function ($id) use ($scores) {
+            return [$id => $scores[$id]];
+        })->all();
+
+        Log::channel('recommendations')->info('Recommendation results', [
+            'query' => $query,
+            'context_weights' => $contextWeights,
+            'scores' => $scores,
+            'top_laptops' => $topLaptopIds // Hanya laptop yang lolos filter
+        ]);
 
         return $this->getSortedResults($scores, $contextWeights);
     }
@@ -73,6 +132,7 @@ class TFIDFRecommender
         // Tambah keyword yang lebih spesifik
         $query = strtolower($query);
         if (preg_match('/sekolah|pelajar|belajar|pendidikan/i', $query)) {
+            $weights['sekolah'] = 5;
             $weights['price'] = 4;
             $weights['cpu'] = 2;
             $weights['battery'] = 3; // Tambah parameter baru
@@ -96,30 +156,6 @@ class TFIDFRecommender
         }
         return $weights;
     }
-
-    private function preprocessSpecs(Laptop $laptop): string
-    {
-        return implode(' ', [
-            $this->brandMapping[strtolower($laptop->brand)] ?? $laptop->brand,
-            preg_replace('/\s+/', ' ', $laptop->model),
-            $this->classifyCPU($laptop->cpu),
-            $this->classifyGPU($laptop->gpu),
-            "ram".$this->extractNumber($laptop->ram, 'GB')."gb",
-            "storage".$this->extractNumber($laptop->storage, ['GB','TB']),
-            $laptop->price < 8000000 ? 'murah' : 'mahal'
-        ]);
-    }
-
-    private function classifyCPU(string $cpu): string
-    {
-        $cpu = strtolower($cpu);
-        if (preg_match('/(i3|ryzen 3|celeron|pentium)/', $cpu)) return 'cpu_low';
-        if (preg_match('/(i5|ryzen 5)/', $cpu)) return 'cpu_mid';
-        if (preg_match('/(i7|i9|ryzen 7|ryzen 9)/', $cpu)) return 'cpu_high';
-        return 'cpu_unknown';
-    }
-
-    
 
     private function combineSpecs(Laptop $laptop): string
     {
@@ -190,10 +226,10 @@ class TFIDFRecommender
     private function calculateSpecScore(Laptop $laptop, array $weights): float
     {
         $score = 0;
-        
-        // Critical spec checks
+    
+        // Critical penalties (pastikan ini tidak membuat skor total negatif)
         if ($weights['gpu'] >= 3 && !$this->isDedicatedGPU($laptop->gpu)) {
-            return -10; // Penalty untuk GPU tidak memenuhi
+            $score -= 10; // Bukan return -10
         }
         
         if ($weights['cpu'] >= 3 && !$this->isHighEndCPU($laptop->cpu)) {
@@ -225,8 +261,16 @@ class TFIDFRecommender
         }
 
         if ($weights['sekolah'] > 0) {
-            if ($laptop->ram < 4) return -10;
-            if ($laptop->price > 10000000) return -5;
+            if ($laptop->ram < 4) return -1000; // Penalti besar
+            if ($laptop->price > 10000000) return -500;
+        }
+
+        if ($weights['editing'] > 0 && $laptop->ram < 16) {
+            $score -= 5; // penalti editing
+        }
+
+        if ($weights['gaming'] > 0 && !$this->isDedicatedGPU($laptop->gpu)) {
+            $score -= 5; // penalti gaming
         }
 
         return $score;
@@ -294,31 +338,32 @@ class TFIDFRecommender
     private function getSortedResults(array $scores, array $contextWeights): Collection
     {
         return collect($scores)
-            ->filter(function ($score, $id) use ($contextWeights) {
-                $laptop = Laptop::find($id);
-                
-                // Filter tanpa weight
-                if ($contextWeights['kantor'] > 0) {
-                    return !$this->isGamingLaptop($laptop) &&
-                           $this->classifyGPU($laptop->gpu) === 'gpu_integrated';
-                }
-                
-                return $score > 0;
-            })
-            ->sortDesc()
-            ->take(10)
-            ->keys()
-            ->pipe(function ($ids) {
-                return Laptop::whereIn('id', $ids)->get();
-            });
-    }
+        ->filter(function ($score, $id) use ($contextWeights) {
+            $laptop = Laptop::find($id);
+            
+            // Filter utama: skor harus positif dan memenuhi spesifikasi
+            if ($score <= 0 || !$this->meetsMinimumSpecs($laptop)) {
+                return false;
+            }
 
-    private function getPriceThreshold(): float
-    {
-        if (str_contains(request()->query('q'), 'sekolah')) {
-            return 10000000;
-        }
-        return 30000000;
+            // 2. Filter spesifik konteks
+            if ($contextWeights['kantor'] > 0) {
+                return !$this->isGamingLaptop($laptop) && 
+                    $this->classifyGPU($laptop->gpu) === 'gpu_integrated';
+            }
+
+            if ($contextWeights['gaming'] > 0) {
+                return $this->isDedicatedGPU($laptop->gpu) &&
+                    $laptop->ram >= 8;
+            }
+
+            return true;
+            })
+
+            ->sortDesc()
+            ->take(20)
+            ->keys()
+            ->pipe(fn($ids) => Laptop::whereIn('id', $ids)->get());
     }
 
     private function meetsMinimumSpecs(Laptop $laptop): bool
@@ -330,7 +375,7 @@ class TFIDFRecommender
         }
         if (str_contains($query, 'sekolah')) {
             return $laptop->ram >= 4 &&
-                preg_match('/i3|Ryzen [3]/i', $laptop->cpu);
+                preg_match('/i3|Ryzen 3/i', $laptop->cpu);
         }
         if (str_contains($query, 'editing')) {
             return $laptop->ram >= 16 &&
@@ -345,7 +390,7 @@ class TFIDFRecommender
 
     private function isGamingLaptop(Laptop $laptop): bool
     {
-        return preg_match('/rtx|gtx|rog|alienware|predator/i',
+        return preg_match('/rtx|gtx|rog|alienware|predator|legion/i',
                 $laptop->brand.' '.$laptop->model);
     }
 
@@ -413,6 +458,39 @@ class TFIDFRecommender
         ];
     }
 
+    private function reviewMismatchWithSpecs(string $reviewText, Laptop $laptop): bool
+    {
+        $reviewText = strtolower($reviewText);
+
+        // Deteksi kalimat positif yang tidak sesuai dengan spek
+        if (str_contains($reviewText, 'bagus untuk editing') && (
+            !$this->isHighEndCPU($laptop->cpu) || $laptop->ram < 16
+        )) {
+            return true;
+        }
+
+        if (str_contains($reviewText, 'lancar untuk gaming') && (
+            !$this->isDedicatedGPU($laptop->gpu) || $laptop->ram < 8
+        )) {
+            return true;
+        }
+
+        if (str_contains($reviewText, 'bagus untuk kerja kantor') && (
+            $this->isGamingLaptop($laptop) || $laptop->ram < 8
+        )) {
+            return true;
+        }
+
+        if (str_contains($reviewText, 'bagus untuk sekolah') && (
+            $laptop->ram < 4 || $laptop->price > 10000000
+        )) {
+            return true;
+        }
+
+        return false;
+    }
+
+
     private function getStopWords(): array
     {
         return [
@@ -458,17 +536,5 @@ class TFIDFRecommender
             'lemot' => 'lambat performa rendah',
 
         ];
-    }
-
-    private function extractNumber(string $text, $units = [])
-    {
-        if (!is_array($units)) {
-            $units = [$units];
-        }
-        $pattern = '/(\d+(?:\.\d+)?)(?:\s*)(' . implode('|', array_map('preg_quote', $units)) . ')?/i';
-        if (preg_match($pattern, $text, $matches)) {
-            return is_numeric($matches[1]) ? (float)$matches[1] : null;
-        }
-        return null;
     }
 }

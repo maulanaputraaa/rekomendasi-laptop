@@ -4,25 +4,38 @@ namespace App\Services;
 
 use App\Models\UserClick;
 use App\Models\Laptop;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class CFRecommender
 {
-    public function getRecommendations($userId, $limit = null)
+    public function getRecommendations($userId, $limit = null, $clicksByUser = null)
     {
-        // Ambil semua data click per user
-        $clicksByUser = UserClick::all()->groupBy('user_id');
+        $logContext = ['type' => 'CF', 'user_id' => $userId];
 
-        // Ambil click user yang sedang login
-        $targetClicks = UserClick::where('user_id', $userId)->pluck('click_count', 'brand_id')->toArray();
+        Log::channel('recommendations')->info("Memulai proses rekomendasi", $logContext);
+
+        // Ambil semua data click per user
+        $clicksByUser = $clicksByUser ?? UserClick::all()->groupBy('user_id');
+
+        // Ambil click user target
+        $targetClicks = UserClick::where('user_id', $userId)
+            ->pluck('click_count', 'brand_id')
+            ->toArray();
+
+        // Log data klik user
+        Log::channel('recommendations')->debug("Data klik user", $logContext + [
+            'click_data' => $targetClicks,
+            'total_brands' => count($targetClicks)
+        ]);
 
         if (empty($targetClicks)) {
+            Log::channel('recommendations')->warning("Tidak ada data klik", $logContext);
             return collect();
         }
 
         $similarities = [];
 
-        // Hitung kesamaan dengan user lain berdasarkan pola klik
+        // Hitung similarity dengan user lain
         foreach ($clicksByUser as $otherUserId => $clicks) {
             if ($otherUserId == $userId) continue;
 
@@ -34,37 +47,65 @@ class CFRecommender
             }
         }
 
-        // Ambil skor brand dari user sendiri (prioritas utama)
-        $finalScores = $targetClicks;
+        // Log similarity
+        Log::channel('recommendations')->debug("Hasil similarity", $logContext + [
+            'total_similar_users' => count($similarities),
+            'similarity_range' => [
+                'min' => min($similarities),
+                'max' => max($similarities),
+                'avg' => array_sum($similarities) / count($similarities)
+            ]
+        ]);
 
-        // Tambahkan skor dari user lain yang mirip
+        // Hitung skor akhir
+        $finalScores = $targetClicks;
         foreach ($similarities as $otherUserId => $similarity) {
             $otherClicks = $clicksByUser[$otherUserId]->pluck('click_count', 'brand_id')->toArray();
             foreach ($otherClicks as $brandId => $count) {
-                if (!isset($finalScores[$brandId])) {
-                    $finalScores[$brandId] = 0;
-                }
-                $finalScores[$brandId] += $similarity * $count;
+                $finalScores[$brandId] = ($finalScores[$brandId] ?? 0) + ($similarity * $count);
             }
         }
 
-        // Urutkan skor tertinggi
         arsort($finalScores);
         $brandIds = array_keys(array_slice($finalScores, 0, $limit, true));
 
-        // Ambil laptop dari brand-brand yang direkomendasikan
-        $laptops = Laptop::whereIn('brand_id', $brandIds)->with('brand')->get();
+        // Ambil dan urutkan laptop
+        $laptops = Laptop::whereIn('brand_id', $brandIds)
+            ->with('brand')
+            ->get()
+            ->sortBy(function ($laptop) use ($brandIds) {
+                return array_search($laptop->brand_id, $brandIds);
+            });
 
-        // Urutkan laptop berdasarkan urutan brand yang direkomendasikan
-        $laptops = $laptops->sortBy(function ($laptop) use ($brandIds) {
-            return array_search($laptop->brand_id, $brandIds);
-        });
+        // Log hasil akhir
+        Log::channel('recommendations')->info("Hasil rekomendasi", $logContext + [
+            'recommendation_breakdown' => [
+                'brands' => $brandIds,
+                'laptops' => $laptops->map(function($laptop) {
+                    return [
+                        'id' => $laptop->id,
+                        'brand' => $laptop->brand->name,
+                        'model' => $laptop->model,
+                        'specs' => [
+                            'cpu' => $laptop->cpu,
+                            'gpu' => $laptop->gpu,
+                            'ram' => $laptop->ram
+                        ]
+                    ];
+                })->toArray()
+            ],
+            'statistics' => [
+                'total_laptops' => $laptops->count(),
+                'brand_distribution' => array_count_values($laptops->pluck('brand_id')->toArray())
+            ]
+        ]);
 
         return $laptops->values();
     }
 
     private function cosineSimilarity($vec1, $vec2)
     {
+        // Implementasi tetap sama
         $commonKeys = array_intersect(array_keys($vec1), array_keys($vec2));
         if (count($commonKeys) === 0) return 0;
 

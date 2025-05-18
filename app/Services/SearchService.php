@@ -9,6 +9,7 @@ use App\Services\CBFRecommender;
 use App\Services\CFRecommender;
 use App\Services\TFIDFRecommender;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 class SearchService
 {
@@ -27,82 +28,74 @@ class SearchService
     {
         $userId = \Illuminate\Support\Facades\Auth::user()->id ?? 1;
 
-        // Coba deteksi rentang harga dari query
-        $priceRange = $this->extractPriceRange($query);
-
-        // Ambil rekomendasi dari hybrid dan TF-IDF
+        // 1. Ambil hasil rekomendasi
         $hybridResults = $this->hybrid->getRecommendations($userId, null);
         $tfidfResults = $this->tfidf->recommend($query);
 
-        // Beri skor normalisasi dari ranking
-        $hybridScores = $this->assignNormalizedScores($hybridResults);
-        $tfidfScores = $this->assignNormalizedScores($tfidfResults);
+        // 2. Proses scoring
+        $hybridScores = $this->assignHybridScores($hybridResults);
+        $tfidfScores = $this->assignTFIDFScores($tfidfResults);
 
-        // Gabungkan skor dari hybrid dan tf-idf
+        // 3. Gabungkan dengan bobot 20% hybrid + 80% TF-IDF
         $combinedScores = [];
-        foreach ($hybridScores as $id => $score) {
-            $combinedScores[$id] = ($score * 0.3) + (($tfidfScores[$id] ?? 0) * 0.7);
-        }
         foreach ($tfidfScores as $id => $score) {
-            if (!isset($combinedScores[$id])) {
-                $combinedScores[$id] = $score * 0.5;
-            }
+            $combinedScores[$id] = ($score * 0.8) + (($hybridScores[$id] ?? 0) * 0.2);
         }
+        
+        // 4. Urutkan dan ambil 20 teratas
+        arsort($combinedScores);
+        $topIds = array_keys(array_slice($combinedScores, 0, 20, true));
 
-        arsort($combinedScores); // Urutkan dari skor tertinggi
-        $topIds = array_keys($combinedScores);
+        // 5. Query database dengan menjaga urutan
+        $laptops = Laptop::with('brand')
+            ->whereIn('id', $topIds)
+            ->orderByRaw('FIELD(id, '.implode(',', $topIds).')')
+            ->get()
+            ->keyBy('id');
 
-        // Ambil data laptop dan filter harga jika ada
-        $laptopsQuery = Laptop::whereIn('id', $topIds);
-        if ($priceRange) {
-            $laptopsQuery->whereBetween('price', [$priceRange['min'], $priceRange['max']]);
-        }
-
-        $laptops = $laptopsQuery->get()->keyBy('id');
-
-        // Ambil rating rata-rata
-        $ratings = Review::whereIn('laptop_id', $laptops->keys())
+        // 6. Ambil rating
+        $ratings = Review::whereIn('laptop_id', $topIds)
             ->selectRaw('laptop_id, AVG(rating) as avg_rating')
             ->groupBy('laptop_id')
             ->pluck('avg_rating', 'laptop_id');
 
-        // Susun hasil akhir dengan rating dan urutan skor
+        // 7. Bangun hasil akhir
         $result = collect();
         foreach ($topIds as $id) {
-            if (isset($laptops[$id])) {
+            if ($laptops->has($id)) {
                 $laptop = $laptops[$id];
+                $laptop->tfidf_score = $tfidfScores[$id] ?? 0;
                 $laptop->average_rating = round($ratings[$id] ?? 0, 1);
                 $result->push($laptop);
             }
         }
 
+        // 8. Logging untuk debugging
+        Log::channel('recommendations')->info('Search results', [
+            'query' => $query,
+            'top_ids' => $topIds,
+            'tfidf_scores' => array_intersect_key($tfidfScores, array_flip($topIds)),
+            'combined_scores' => array_intersect_key($combinedScores, array_flip($topIds))
+        ]);
+
         return $result;
     }
 
-    private function assignNormalizedScores(Collection $items): array
+    private function assignHybridScores(Collection $items): array
     {
-        $scores = [];
         $count = $items->count();
-        foreach ($items->values() as $i => $item) {
-            $id = $item->id;
-            $scores[$id] = 1 - ($i / max($count - 1, 1)); // Nilai dari 1 ke 0
-        }
-        return $scores;
+        return $items->values()->mapWithKeys(function ($item, $i) use ($count) {
+            return [$item->id => 1 - ($i / max($count - 1, 1))];
+        })->all();
     }
 
-    private function extractPriceRange(string $query): ?array
+    private function assignTFIDFScores(Collection $items): array
     {
-        if (preg_match('/(\d{1,3})\s*(juta|jutaan)/i', $query, $matches)) {
-            $angka = (int) $matches[1];
-            $harga = $angka * 1_000_000;
-            $toleransi = 1_000_000;
-
-            return [
-                'min' => max(0, $harga - $toleransi),
-                'max' => $harga + $toleransi
-            ];
-        }
-
-        return null;
+        // Asumsi TFIDFRecommender mengembalikan collection dengan properti 'tfidf_score'
+        $scores = $items->mapWithKeys(fn($item) => [$item->id => $item->tfidf_score])->all();
+        
+        // Normalisasi ke skala 0-1
+        $maxScore = max($scores) ?: 1;
+        return array_map(fn($score) => $score / $maxScore, $scores);
     }
 }
