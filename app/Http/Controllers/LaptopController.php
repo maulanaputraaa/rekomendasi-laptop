@@ -17,12 +17,16 @@ class LaptopController extends Controller
 
         if (Auth::check()) {
             $user = Auth::user();
-            $brandId = $laptop->brand->id;
 
-            UserClick::updateOrCreate(
-                ['user_id' => $user->id, 'brand_id' => $brandId],
-                ['click_count' => DB::raw('click_count + 1')]
-            );
+            // Hanya tambahkan click jika user bukan admin
+            if ($user->role !== 'admin') {
+                $brandId = $laptop->brand->id;
+
+                UserClick::updateOrCreate(
+                    ['user_id' => $user->id, 'brand_id' => $brandId],
+                    ['click_count' => DB::raw('click_count + 1')]
+                );
+            }
         }
 
         return inertia('Laptop/LaptopDetail', [
@@ -49,6 +53,7 @@ class LaptopController extends Controller
             ]
         ]);
     }
+
 
 
     // Menampilkan daftar semua laptop
