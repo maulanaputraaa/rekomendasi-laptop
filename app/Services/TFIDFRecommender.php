@@ -18,14 +18,19 @@ class TFIDFRecommender
         $this->synonymMapping = $this->getSynonymMapping();
     }
 
-    public function recommend(string $query): Collection
+    public function recommend(string $query, ?array $priceRange = null): Collection
     {
         $contextWeights = $this->detectQueryContext($query);
+        
+        if ($priceRange) {
+            $contextWeights['price_range'] = $priceRange;
+            $contextWeights['price'] = 5;
+        }
+
         $laptops = Laptop::with('reviews', 'brand')->get();
         $allDocsForIDF = collect();
         $laptopDocs = collect();
 
-        // Proses dokumen laptop dan review untuk IDF dan TF
         foreach ($laptops as $laptop) {
             $specsText = $this->combineSpecs($laptop);
             $specsTerms = $this->tokenize($specsText, 3);
@@ -58,58 +63,11 @@ class TFIDFRecommender
         $queryTerms = $this->tokenize($query);
         $scores = $this->calculateScores($laptopDocs, $queryTerms, $idf, $contextWeights);
 
-        // Return collection dengan skor
         return $this->getSortedResults($scores, $contextWeights)
             ->map(function ($laptop) use ($scores) {
                 $laptop->tfidf_score = $scores[$laptop->id] ?? 0;
                 return $laptop;
             });
-
-        foreach ($laptops as $laptop) {
-            $specsText = $this->combineSpecs($laptop);
-            $specsTerms = $this->tokenize($specsText, 3);
-            $allDocsForIDF->push($specsTerms);
-
-            $reviewTerms = [];
-            foreach ($laptop->reviews as $review) {
-                $reviewText = strtolower($review->review);
-
-                if ($this->isNegativeSentence($reviewText)) continue;
-                if (!$this->isPositiveSentence($reviewText)) continue;
-
-                if ($this->reviewMismatchWithSpecs($reviewText, $laptop)) {
-                    Log::channel('recommendations')->info('Review dibuang karena mismatch', [
-                        'laptop_id' => $laptop->id,
-                        'review' => $review->review,
-                    ]);
-                    continue;
-                }
-
-                $revTerms = $this->tokenize($review->review);
-                $allDocsForIDF->push($revTerms);
-                $reviewTerms = array_merge($reviewTerms, $revTerms);
-            }
-
-            $laptopDocs[$laptop->id] = array_merge($specsTerms, $reviewTerms);
-        }
-
-        $idf = $this->calculateIDF($allDocsForIDF);
-        $queryTerms = $this->tokenize($query);
-        $scores = $this->calculateScores($laptopDocs, $queryTerms, $idf, $contextWeights);
-        $filteredResults = $this->getSortedResults($scores, $contextWeights);
-
-        $topLaptopIds = $filteredResults->pluck('id')->mapWithKeys(function ($id) use ($scores) {
-            return [$id => $scores[$id]];
-        })->all();
-
-        Log::channel('recommendations')->info('Recommendation results', [
-            'query' => $query,
-            'context_weights' => $contextWeights,
-            'scores' => $scores,
-            'top_laptops' => $topLaptopIds // Hanya laptop yang lolos filter
-        ]);
-
-        return $this->getSortedResults($scores, $contextWeights);
     }
 
     private function detectQueryContext(string $query): array
@@ -126,34 +84,70 @@ class TFIDFRecommender
             'gaming' => 0,
             'editing' => 0,
             'sekolah' => 0,
-
         ];
 
-        // Tambah keyword yang lebih spesifik
         $query = strtolower($query);
-        if (preg_match('/sekolah|pelajar|belajar|pendidikan/i', $query)) {
-            $weights['sekolah'] = 5;
-            $weights['price'] = 4;
-            $weights['cpu'] = 2;
-            $weights['battery'] = 3; // Tambah parameter baru
-        } elseif (preg_match('/editing|video|desain grafis|adobe/i', $query)) {
-            $weights['cpu'] = 4;
-            $weights['gpu'] = 3;
-            $weights['ram'] = 3;
-            $weights['storage'] = 2;
-            $weights['display'] = 2; // Tambah parameter warna
-        } elseif (preg_match('/gaming|game|rtx|gtx/i', $query)) {
-            $weights['gpu'] = 5;
-            $weights['cooling'] = 3;
-            $weights['cpu'] = 3;
-            $weights['refresh'] = 2; // Tambah parameter refresh rate
-        } elseif (preg_match('/kantor|office|pekerjaan|bisnis/i', $query)) {
-            $weights['office'] = 5;
-            $weights['cpu'] = 2;
-            $weights['ram'] = 2;
-            $weights['price'] = 4;
-            $weights['gpu'] = -2; // Penalti GPU gaming
+        
+        // Deteksi konteks utama dengan bobot tinggi
+        if (preg_match('/\b(kantor|office|pekerjaan|bisnis)\b/i', $query)) {
+            $weights['kantor'] = 10;
+            $weights['price'] = 8;
+            $weights['cpu'] = 5;
+            $weights['gpu'] = -5;
+        } 
+        if (preg_match('/\b(editing|video|desain|grafis|adobe)\b/i', $query)) {
+            $weights['editing'] = 10;
+            $weights['cpu'] = 8;
+            $weights['gpu'] = 6;
+        } 
+        if (preg_match('/\b(gaming|game)\b/i', $query)) {
+            $weights['gaming'] = 10;
+            $weights['gpu'] = 10;
+        } 
+        if (preg_match('/\b(sekolah|pelajar|belajar|pendidikan)\b/i', $query)) {
+            $weights['sekolah'] = 10;
+            $weights['price'] = 8;
         }
+
+        // Deteksi GPU secara spesifik
+        if (preg_match('/\b(rtx)\b/i', $query)) {
+            $weights['gpu_series'] = 'rtx';
+            $weights['gpu'] = 15;
+            $weights['gpu_priority'] = 2; // Prioritas lebih tinggi untuk RTX
+        } 
+        elseif (preg_match('/\b(gtx)\b/i', $query)) {
+            $weights['gpu_series'] = 'gtx';
+            $weights['gpu'] = 15;
+            $weights['gpu_priority'] = 1; // Prioritas lebih rendah untuk GTX
+        }
+
+        // Deteksi model GPU spesifik (RTX 3060, GTX 1650, dll)
+        if (preg_match('/\b(rtx|gtx|rx)\s*(\d{4})\b/i', $query, $matches)) {
+            $weights['gpu_type'] = strtolower($matches[1]);
+            $weights['gpu_model'] = $matches[2];
+            $weights['gpu'] = 20; // Bobot sangat tinggi untuk model spesifik
+            $weights['gpu_strict'] = true;
+        }
+
+        // Deteksi CPU
+        if (preg_match('/\b(intel|core\s*i[3579])\b/i', $query)) {
+            $weights['cpu_brand'] = 'intel';
+            $weights['cpu'] = 15;
+            $weights['cpu_strict'] = true;
+        } elseif (preg_match('/\b(amd|ryzen\s*[3579])\b/i', $query)) {
+            $weights['cpu_brand'] = 'amd';
+            $weights['cpu'] = 15;
+            $weights['cpu_strict'] = true;
+        }
+
+        // Deteksi RAM
+        if (preg_match('/\bram\s*(\d+)\s*gb\b/i', $query, $matches) || 
+            preg_match('/\b(\d+)\s*gb\s*ram\b/i', $query, $matches)) {
+            $weights['ram_size'] = (int)$matches[1];
+            $weights['ram'] = 15;
+            $weights['ram_strict'] = true;
+        }
+
         return $weights;
     }
 
@@ -166,7 +160,7 @@ class TFIDFRecommender
             $laptop->description,
             $laptop->cpu,
             $laptop->gpu,
-            $laptop->ram,
+            $laptop->ram . 'GB RAM',
             $laptop->storage,
             $laptop->display
         ]);
@@ -186,12 +180,26 @@ class TFIDFRecommender
 
         $terms = array_map(fn($term) => $this->synonymMapping[$term] ?? $term, $terms);
 
+        // Tangkap spesifikasi teknis
         preg_match_all('/(\d+)\s?GB/i', $text, $matches);
-        $text .= ' '.implode(' ', $matches[1]).'gb';
+        if (!empty($matches[1])) {
+            foreach ($matches[1] as $gb) {
+                $terms[] = 'ram_' . $gb . 'gb';
+            }
+        }
 
-        preg_match_all('/(i\d+)\s(\d+)(th|nd|rd)/i', $text, $matches);
-        foreach ($matches[1] as $key => $cpu) {
-            $text .= ' gen'.$matches[2][$key];
+        preg_match_all('/(intel|core)\s*(i[3579])|(amd|ryzen)\s*([3579])/i', $text, $matches, PREG_SET_ORDER);
+        foreach ($matches as $match) {
+            if (!empty($match[2])) {
+                $terms[] = 'cpu_intel_' . strtolower($match[2]);
+            } elseif (!empty($match[4])) {
+                $terms[] = 'cpu_amd_r' . $match[4];
+            }
+        }
+
+        preg_match_all('/(rtx|gtx|rx)\s*(\d{4})/i', $text, $matches, PREG_SET_ORDER);
+        foreach ($matches as $match) {
+            $terms[] = 'gpu_' . strtolower($match[1]) . '_' . $match[2];
         }
 
         return array_merge(...array_fill(0, $weight, $terms));
@@ -206,13 +214,11 @@ class TFIDFRecommender
 
             foreach ($queryTerms as $term) {
                 if (isset($tf[$term], $idf[$term])) {
-                    // Terapkan bobot konteks
                     $termWeight = $contextWeights[$term] ?? 1;
                     $score += ($tf[$term] * $idf[$term]) * $termWeight;
                 }
             }
 
-            // Tambahkan penilaian spesifikasi khusus
             $laptop = Laptop::find($id);
             $score += $this->calculateSpecScore($laptop, $contextWeights);
 
@@ -227,53 +233,152 @@ class TFIDFRecommender
     {
         $score = 0;
     
-        // Critical penalties (pastikan ini tidak membuat skor total negatif)
+        // Penalty dasar untuk ketidaksesuaian
         if ($weights['gpu'] >= 3 && !$this->isDedicatedGPU($laptop->gpu)) {
-            $score -= 10; // Bukan return -10
+            $score -= 3;
         }
         
         if ($weights['cpu'] >= 3 && !$this->isHighEndCPU($laptop->cpu)) {
-            return -5; // Penalty untuk CPU tidak memenuhi
+            $score -= 4;
         }
 
-        // Dynamic scoring
-        if ($weights['price'] >= 3) {
+        // Penanganan harga
+        if (isset($weights['price_range'])) {
+            [$min, $max] = $weights['price_range'];
+            $mid = ($min + $max) / 2;
+            $score += $this->calculatePriceScore($laptop->price, $mid);
+        } else if ($weights['price'] >= 3) {
             $score += $this->calculatePriceScore($laptop->price, 8000000);
         }
         
-        if ($weights['gpu'] >= 3) {
-            $score += $this->calculateGPUScore($laptop->gpu);
-        }
-
+        // Penalty & bonus konteks utama
         if ($weights['kantor'] > 0) {
-            if ($this->isGamingLaptop($laptop)) return -20;
-            if ($laptop->ram < 8) return -10;
+            if ($this->isGamingLaptop($laptop)) $score -= 10;
+            if ($this->isDedicatedGPU($laptop->gpu)) $score -= 8;
+            if ($this->isHighEndCPU($laptop->cpu)) $score -= 5;
+            if ($laptop->price > 15000000) $score -= 5;
+            
+            // Bonus untuk karakteristik kantor
+            if (!$this->isDedicatedGPU($laptop->gpu)) $score += 5;
+            if ($laptop->price < 10000000) $score += 3;
+            if (preg_match('/i3|i5|ryzen 3|ryzen 5/i', $laptop->cpu)) $score += 2;
         }
-
+        
+        if ($weights['sekolah'] > 0) {
+            if ($this->isGamingLaptop($laptop)) $score -= 10;
+            if ($laptop->price > 10000000) $score -= 8;
+            if (preg_match('/i7|i9|ryzen 7|ryzen 9/i', $laptop->cpu)) $score -= 5;
+            
+            // Bonus untuk karakteristik sekolah
+            if ($laptop->price < 8000000) $score += 5;
+            if (preg_match('/i3|ryzen 3|pentium|celeron/i', $laptop->cpu)) $score += 3;
+        }
+        
         if ($weights['gaming'] > 0) {
-            if (!$this->isDedicatedGPU($laptop->gpu)) return -20;
-            if ($laptop->ram < 8) return -10;
+            if (!$this->isDedicatedGPU($laptop->gpu)) $score -= 10;
+            if ($laptop->ram < 8) $score -= 8;
+            
+            // Bonus untuk karakteristik gaming
+            if ($this->isDedicatedGPU($laptop->gpu)) $score += 5;
+            if ($laptop->ram >= 16) $score += 3;
         }
 
         if ($weights['editing'] > 0) {
-            if (!$this->isHighEndCPU($laptop->cpu)) return -20;
-            if ($laptop->ram < 16) return -10;
+            if (!$this->isHighEndCPU($laptop->cpu)) $score -= 8;
+            if ($laptop->ram < 16) $score -= 5;
+            
+            // Bonus untuk karakteristik editing
+            if ($this->isHighEndCPU($laptop->cpu)) $score += 5;
+            if ($laptop->ram >= 32) $score += 3;
         }
 
-        if ($weights['sekolah'] > 0) {
-            if ($laptop->ram < 4) return -1000; // Penalti besar
-            if ($laptop->price > 10000000) return -500;
+        // Bonus/penalty spesifikasi teknis
+        if (isset($weights['cpu_strict'])) {
+            $laptopCpu = strtolower($laptop->cpu);
+            $brand = $weights['cpu_brand'];
+            
+            if ($brand === 'amd') {
+                if (strpos($laptopCpu, 'amd') !== false || 
+                    strpos($laptopCpu, 'ryzen') !== false) {
+                    $score += 15;
+                } else {
+                    $score -= 15;
+                }
+            } 
+            elseif ($brand === 'intel') {
+                if (strpos($laptopCpu, 'intel') !== false || 
+                    strpos($laptopCpu, 'core') !== false) {
+                    $score += 15;
+                } else {
+                    $score -= 15;
+                }
+            }
         }
 
-        if ($weights['editing'] > 0 && $laptop->ram < 16) {
-            $score -= 5; // penalti editing
+        if (isset($weights['ram_strict'])) {
+            $ramSize = $weights['ram_size'];
+            
+            if ($laptop->ram == $ramSize) {
+                $score += 10;
+            } elseif ($laptop->ram > $ramSize && $laptop->ram <= $ramSize * 1.5) {
+                $score += 5;
+            } elseif ($laptop->ram > $ramSize * 1.5) {
+                $score -= 3;
+            } else {
+                $score -= 10;
+            }
         }
 
-        if ($weights['gaming'] > 0 && !$this->isDedicatedGPU($laptop->gpu)) {
-            $score -= 5; // penalti gaming
+        if (isset($weights['gpu_strict'])) {
+            $laptopGpu = strtolower($laptop->gpu);
+            $gpuType = $weights['gpu_type'];
+            
+            if (strpos($laptopGpu, $gpuType) !== false) {
+                $score += 10;
+                
+                if (isset($weights['gpu_model'])) {
+                    $model = $weights['gpu_model'];
+                    if (preg_match("/{$gpuType}.*{$model}/", $laptopGpu)) {
+                        $score += 5;
+                    } else {
+                        $score -= 5;
+                    }
+                }
+            } else {
+                $score -= 10;
+            }
+        }
+
+        // PERBAIKAN UTAMA: BONUS/PENALTY UNTUK SERIES GPU
+        if (isset($weights['gpu_series'])) {
+            $laptopGpu = strtolower($laptop->gpu);
+            $series = $weights['gpu_series'];
+            
+            if (str_contains($laptopGpu, $series)) {
+                // Berikan bonus berdasarkan series dan prioritas
+                $score += $weights['gpu_priority'] * 10;
+                
+                // Berikan bonus tambahan untuk model tinggi
+                $modelScore = $this->extractGPUModelScore($laptop->gpu, $series);
+                $score += $modelScore * 0.5;
+            } else {
+                // Penalty berat untuk series yang tidak sesuai
+                $score -= 15;
+            }
         }
 
         return $score;
+    }
+
+    private function extractGPUModelScore(string $gpu, string $series): int
+    {
+        $gpu = strtolower($gpu);
+        $pattern = '/' . $series . '\s*(\d{4})/';
+        
+        if (preg_match($pattern, $gpu, $matches)) {
+            return (int)$matches[1];
+        }
+        return 0;
     }
 
     private function isDedicatedGPU(string $gpu): bool
@@ -286,24 +391,12 @@ class TFIDFRecommender
         return preg_match('/i[579]|Ryzen [79]/i', $cpu);
     }
 
-    private function calculateGPUScore(string $gpu): float
-    {
-        if (preg_match('/RTX (\d{4})/', $gpu, $matches)) {
-            $model = (int)$matches[1];
-            return $model >= 3060 ? 5 : 3;
-        }
-        return 0;
-    }
-
     private function calculatePriceScore(float $price, float $target): float
     {
-        // Semakin dekat ke target, semakin tinggi skornya (maksimum 5)
-        if ($price <= $target) {
-            return 5;
-        }
-        // Skor menurun secara linier, minimum 0
-        $score = max(0, 5 - (($price - $target) / $target) * 5);
-        return $score;
+        $diff = abs($price - $target);
+        $maxDiff = 2000000;
+        $normalizedDiff = min($diff, $maxDiff) / $maxDiff;
+        return 5 * (1 - $normalizedDiff);
     }
 
     private function calculateTF(array $terms): array
@@ -338,90 +431,172 @@ class TFIDFRecommender
     private function getSortedResults(array $scores, array $contextWeights): Collection
     {
         return collect($scores)
-        ->filter(function ($score, $id) use ($contextWeights) {
-            $laptop = Laptop::find($id);
-            
-            // Filter utama: skor harus positif dan memenuhi spesifikasi
-            if ($score <= 0 || !$this->meetsMinimumSpecs($laptop)) {
-                return false;
-            }
+            ->filter(function ($score, $id) use ($contextWeights) {
+                $laptop = Laptop::find($id);
+                
+                // Filter dasar
+                if ($laptop->ram < 4) return false;
+                
+                // Filter konteks utama ketat
+                if ($contextWeights['kantor'] > 0) {
+                    if ($this->isGamingLaptop($laptop)) return false;
+                    if ($this->isDedicatedGPU($laptop->gpu)) return false;
+                    if ($laptop->price > 15000000) return false;
+                }
+                
+                if ($contextWeights['sekolah'] > 0) {
+                    if ($this->isGamingLaptop($laptop)) return false;
+                    if ($laptop->price > 10000000) return false;
+                    if (!preg_match('/i3|ryzen 3|pentium|celeron/i', strtolower($laptop->cpu))) return false;
+                }
+                
+                if ($contextWeights['gaming'] > 0) {
+                    if (!$this->isDedicatedGPU($laptop->gpu)) return false;
+                    if ($laptop->ram < 8) return false;
+                }
+                
+                if ($contextWeights['editing'] > 0) {
+                    if (!$this->isHighEndCPU($laptop->cpu)) return false;
+                    if ($laptop->ram < 16) return false;
+                }
 
-            // 2. Filter spesifik konteks
-            if ($contextWeights['kantor'] > 0) {
-                return !$this->isGamingLaptop($laptop) && 
-                    $this->classifyGPU($laptop->gpu) === 'gpu_integrated';
-            }
+                // Filter spesifikasi teknis
+                if (isset($contextWeights['cpu_strict'])) {
+                    $laptopCpu = strtolower($laptop->cpu);
+                    $brand = $contextWeights['cpu_brand'];
+                    
+                    if ($brand === 'amd') {
+                        if (!preg_match('/(amd|ryzen)/', $laptopCpu)) {
+                            return false;
+                        }
+                    } 
+                    elseif ($brand === 'intel') {
+                        if (!preg_match('/(intel|core)/', $laptopCpu)) {
+                            return false;
+                        }
+                    }
+                }
 
-            if ($contextWeights['gaming'] > 0) {
-                return $this->isDedicatedGPU($laptop->gpu) &&
-                    $laptop->ram >= 8;
-            }
+                if (isset($contextWeights['ram_strict'])) {
+                    $ramSize = $contextWeights['ram_size'];
+                    
+                    if ($laptop->ram < $ramSize) {
+                        return false;
+                    }
+                    
+                    if ($laptop->ram > $ramSize * 1.5) {
+                        return false;
+                    }
+                }
 
-            return true;
+                if (isset($contextWeights['gpu_strict'])) {
+                    $laptopGpu = strtolower($laptop->gpu);
+                    $gpuType = $contextWeights['gpu_type'];
+                    
+                    if (!str_contains($laptopGpu, $gpuType)) {
+                        return false;
+                    }
+                    
+                    if (isset($contextWeights['gpu_model'])) {
+                        $model = $contextWeights['gpu_model'];
+                        if (!preg_match("/{$gpuType}.*{$model}/", $laptopGpu)) {
+                            return false;
+                        }
+                    }
+                }
+
+                // PERBAIKAN UTAMA: Filter GPU series
+                if (isset($contextWeights['gpu_series'])) {
+                    $laptopGpu = strtolower($laptop->gpu);
+                    $series = $contextWeights['gpu_series'];
+                    
+                    if (!str_contains($laptopGpu, $series)) {
+                        return false;
+                    }
+                }
+
+                return $score > 0;
             })
+            ->sortByDesc(function ($score, $id) use ($contextWeights) {
+                $laptop = Laptop::find($id);
+                $finalScore = $score;
+                
+                // Bonus tambahan untuk konteks utama
+                if ($contextWeights['kantor'] > 0) {
+                    if (!$this->isDedicatedGPU($laptop->gpu)) $finalScore += 5;
+                    if ($laptop->price < 10000000) $finalScore += 3;
+                    if (preg_match('/i3|i5|ryzen 3|ryzen 5/i', $laptop->cpu)) $finalScore += 2;
+                }
+                
+                if ($contextWeights['sekolah'] > 0) {
+                    if ($laptop->price < 8000000) $finalScore += 5;
+                    if (preg_match('/i3|ryzen 3|pentium|celeron/i', $laptop->cpu)) $finalScore += 3;
+                }
+                
+                if ($contextWeights['gaming'] > 0) {
+                    if ($this->isDedicatedGPU($laptop->gpu)) $finalScore += 5;
+                    if ($laptop->ram >= 16) $finalScore += 3;
+                }
+                
+                if ($contextWeights['editing'] > 0) {
+                    if ($this->isHighEndCPU($laptop->cpu)) $finalScore += 5;
+                    if ($laptop->ram >= 32) $finalScore += 3;
+                }
+                
+                // Bonus tambahan untuk spesifikasi teknis
+                if (isset($contextWeights['cpu_strict'])) {
+                    $laptopCpu = strtolower($laptop->cpu);
+                    $brand = $contextWeights['cpu_brand'];
+                    
+                    if ($brand === 'amd' && str_contains($laptopCpu, 'ryzen')) {
+                        $finalScore += 5;
+                    }
+                    elseif ($brand === 'intel' && preg_match('/core\s*i[3579]/', $laptopCpu)) {
+                        $finalScore += 5;
+                    }
+                }
+                
+                if (isset($contextWeights['ram_strict'])) {
+                    $ramSize = $contextWeights['ram_size'];
+                    if ($laptop->ram == $ramSize) {
+                        $finalScore += 5;
+                    }
+                }
+                
+                // PERBAIKAN UTAMA: Bonus untuk model GPU
+                if (isset($contextWeights['gpu_series']) && !isset($contextWeights['gpu_model'])) {
+                    $series = $contextWeights['gpu_series'];
+                    $modelScore = $this->extractGPUModelScore($laptop->gpu, $series);
+                    
+                    // Berikan bonus untuk model GPU yang lebih tinggi
+                    $finalScore += $modelScore * 0.1;
+                    
+                    // Berikan bonus tambahan untuk seri RTX
+                    if ($series === 'rtx') {
+                        $finalScore += 5;
+                    }
+                }
 
-            ->sortDesc()
+                return $finalScore;
+            })
             ->take(20)
             ->keys()
-            ->pipe(fn($ids) => Laptop::whereIn('id', $ids)->get());
-    }
-
-    private function meetsMinimumSpecs(Laptop $laptop): bool
-    {
-        $query = strtolower(request()->query('q'));
-        if (str_contains($query, 'gaming')) {
-            return $this->isDedicatedGPU($laptop->gpu) &&
-                $laptop->ram >= 8;
-        }
-        if (str_contains($query, 'sekolah')) {
-            return $laptop->ram >= 4 &&
-                preg_match('/i3|Ryzen 3/i', $laptop->cpu);
-        }
-        if (str_contains($query, 'editing')) {
-            return $laptop->ram >= 16 &&
-                preg_match('/i[7-9]|Ryzen [7-9]/i', $laptop->cpu);
-        }
-        if (str_contains($query, 'kerja')) {
-            return !$this->isGamingLaptop($laptop) &&
-                    $laptop->ram >= 8;
-        }
-        return true;
+            ->pipe(function ($ids) {
+                return Laptop::whereIn('id', $ids)
+                    ->with('brand')
+                    ->get();
+            });
     }
 
     private function isGamingLaptop(Laptop $laptop): bool
     {
-        return preg_match('/rtx|gtx|rog|alienware|predator|legion/i',
-                $laptop->brand.' '.$laptop->model);
+        $text = strtolower($laptop->brand->name . ' ' . $laptop->series . ' ' . $laptop->model);
+        return preg_match('/rtx|gtx|rog|alienware|predator|legion|gaming|msi|razer|geforce|rxt|tuf|nitro|omen|ge66|ge76|gs66|gl63|gp66|strix|scar|aorus|eluktronics|ideapad gaming|nitro|helios|trident|mech|vector|bravo|delta|alpha|beta/i', $text);
     }
 
-    private function classifyGPU(string $gpu): string
-    {
-        $gpu = strtolower($gpu);
-        if (preg_match('/(intel uhd|iris xe|radeon graphics)/', $gpu)) return 'gpu_integrated';
-        if (preg_match('/(rtx|gtx|radeon rx)/', $gpu)) return 'gpu_dedicated';
-        return 'gpu_unknown';
-    }
-
-    // === Filter tambahan ===
     private function isNegativeSentence(string $text): bool
     {
-        foreach ($this->getNegativeIndicators() as $phrase) {
-            if (str_contains($text, $phrase)) return true;
-        }
-        return false;
-    }
-
-    private function isPositiveSentence(string $text): bool
-    {
-        foreach ($this->getPositiveIndicators() as $phrase) {
-            if (str_contains($text, $phrase)) return true;
-        }
-        return false;
-    }
-
-    private function getNegativeIndicators(): array
-    {
-        return [
+        $indicators = [
             'hanya bisa untuk',
             'kurang cocok untuk',
             'tidak cocok untuk',
@@ -437,11 +612,16 @@ class TFIDFRecommender
             'cepat panas saat',
             'frame drop saat',
         ];
+        
+        foreach ($indicators as $phrase) {
+            if (str_contains($text, $phrase)) return true;
+        }
+        return false;
     }
 
-    private function getPositiveIndicators(): array
+    private function isPositiveSentence(string $text): bool
     {
-        return [
+        $indicators = [
             'cocok untuk',
             'bagus untuk',
             'sangat baik untuk',
@@ -456,13 +636,17 @@ class TFIDFRecommender
             'responsif saat',
             'mulus saat digunakan',
         ];
+        
+        foreach ($indicators as $phrase) {
+            if (str_contains($text, $phrase)) return true;
+        }
+        return false;
     }
 
     private function reviewMismatchWithSpecs(string $reviewText, Laptop $laptop): bool
     {
         $reviewText = strtolower($reviewText);
 
-        // Deteksi kalimat positif yang tidak sesuai dengan spek
         if (str_contains($reviewText, 'bagus untuk editing') && (
             !$this->isHighEndCPU($laptop->cpu) || $laptop->ram < 16
         )) {
@@ -490,51 +674,30 @@ class TFIDFRecommender
         return false;
     }
 
-
     private function getStopWords(): array
     {
         return [
-            'untuk',
-            'ke',
-            'dari',
-            'yang',
-            'dan',
-            'atau',
-            'adalah',
-            'ini',
-            'itu',
+            'untuk', 'ke', 'dari', 'yang', 'dan', 'atau', 'adalah', 'ini', 'itu', 'dengan', 'pada',
+            'saya', 'kamu', 'dia', 'kami', 'kita', 'mereka', 'di', 'dalam', 'tanpa', 'atas', 'bawah',
+            'depan', 'belakang', 'samping', 'tentang', 'sebagai', 'seperti', 'karena', 'sehingga',
+            'tetapi', 'namun', 'jika', 'maka', 'ketika', 'sambil', 'meskipun', 'sementara', 'apakah',
+            'bagaimana', 'dimana', 'kapan', 'siapa', 'mengapa'
         ];
     }
 
     private function getSynonymMapping(): array
     {
         return [
-            // Untuk sekolah
-            'sekolah' => 'entrylevel',
-            'pelajar' => 'entrylevel',
-            'pendidikan' => 'basic',
-
-            // Untuk editing
-            'editing' => 'highperformance',
-            'desain' => 'creative',
-            'video' => 'render',
-
-            // Teknis
-            'processor' => 'cpu',
-            'cpu' => 'processor',
-            'graphics' => 'gpu',
-            'gpu' => 'graphics',
-            'ssd' => 'storage',
-            'hdd' => 'storage',
-            'memory' => 'ram',
-            'ram' => 'memory',
-
-            //Fitur umum
-            'nyaman' => 'ergonomis ringan',
-            'panas' => 'overheating temperatur tinggi',
-            'awet' => 'tahan lama durability',
-            'lemot' => 'lambat performa rendah',
-
+            'sekolah' => 'entrylevel', 'pelajar' => 'entrylevel', 'pendidikan' => 'basic', 'mahasiswa' => 'entrylevel',
+            'editing' => 'highperformance', 'desain' => 'creative', 'video' => 'render', 'grafis' => 'creative', 'animasi' => 'creative',
+            'gaming' => 'gpu_dedicated', 'game' => 'gpu_dedicated', 'rtx' => 'gpu_dedicated', 'gtx' => 'gpu_dedicated', 'rx' => 'gpu_dedicated',
+            'kantor' => 'office', 'bisnis' => 'office', 'pekerjaan' => 'office', 'kerja' => 'office',
+            'processor' => 'cpu', 'prosesor' => 'cpu', 'cpu' => 'processor', 'graphics' => 'gpu', 'grafis' => 'gpu', 'gpu' => 'graphics',
+            'ssd' => 'storage', 'harddisk' => 'storage', 'hdd' => 'storage', 'memory' => 'ram', 'ram' => 'memory', 'disk' => 'storage',
+            'layar' => 'display', 'screen' => 'display', 'baterai' => 'battery',
+            'nyaman' => 'ergonomis ringan', 'panas' => 'overheating temperatur tinggi', 'awet' => 'tahan lama durability',
+            'lemot' => 'lambat performa rendah', 'cepat' => 'responsif kencang', 'lambat' => 'lelet lemot',
+            'tipis' => 'ringan portable', 'berat' => 'tebal besar'
         ];
     }
 }

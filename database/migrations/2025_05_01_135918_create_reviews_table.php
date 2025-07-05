@@ -13,9 +13,9 @@ return new class extends Migration
     {
         Schema::create('reviews', function (Blueprint $table) {
             $table->id();
-            $table->string('responder_name');
+            $table->string('responder_name', 100);
             $table->foreignId('laptop_id')->constrained()->onDelete('cascade');
-            $table->tinyInteger('rating'); // Skala misalnya 1–5
+            $table->tinyInteger('rating'); // 1–5
             $table->text('review')->nullable();
             $table->timestamps();
 

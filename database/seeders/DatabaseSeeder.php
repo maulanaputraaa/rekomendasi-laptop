@@ -20,7 +20,7 @@ class DatabaseSeeder extends Seeder
             'role' => 'admin',
         ]);
         $this->call([
-            BrandSeeder::class,
+            //BrandSeeder::class,
             //LaptopSeeder::class,
             //ReviewSeeder::class,
         ]);

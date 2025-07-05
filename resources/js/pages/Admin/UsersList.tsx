@@ -218,7 +218,7 @@ export default function UserList({ users }: Props) {
                 transition={{ duration: 0.5, delay: 0.2 }}
               >
                 <BarChart3 className="w-7 h-7 text-violet-500" />
-                Dasbor Admin
+                Dashboard User
               </motion.h1>
               <motion.p
                 className="text-gray-500 dark:text-gray-400 mt-1"
@@ -226,7 +226,7 @@ export default function UserList({ users }: Props) {
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.5, delay: 0.3 }}
               >
-                Kelola pengguna dan data sistem
+                Kelola data pengguna dan izin akses
               </motion.p>
             </div>
           </div>

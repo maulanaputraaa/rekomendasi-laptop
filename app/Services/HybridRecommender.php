@@ -9,71 +9,70 @@ class HybridRecommender
 {
     protected $cbf;
     protected $cf;
+    protected $tfidf; // Tambahkan TFIDF Recommender
 
-    public function __construct(CBFRecommender $cbf, CFRecommender $cf)
-    {
+    public function __construct(
+        CBFRecommender $cbf, 
+        CFRecommender $cf,
+        TFIDFRecommender $tfidf // Inject TFIDF Recommender
+    ) {
         $this->cbf = $cbf;
         $this->cf = $cf;
+        $this->tfidf = $tfidf; // Inisialisasi
     }
 
-    public function getRecommendations($userId, $query = '', $limit = null)
+    public function getRecommendations($userId, $query = '', $limit = 10): Collection
     {
-        // Mendapatkan rekomendasi berdasarkan CBF dan CF
-        $cbfRecs = $this->cbf->getRecommendations($userId, $limit);
-        $cfRecs = $this->cf->getRecommendations($userId, $limit);
-
-        // CBF lebih diutamakan jika ada banyak interaksi pengguna
-        $cbfWeight = count($cbfRecs) > 0 ? 0.6 : 0.4;
-        $cfWeight = count($cfRecs) > 0 ? 0.6 : 0.4;
-
-        // Gabungkan hasil CBF dan CF
-        $combined = $this->combineRecommendations($cbfRecs, $cfRecs, $cbfWeight, $cfWeight);
-
-        // Saring berdasarkan query atau preferensi harga jika ada
-        if ($query) {
-            $filtered = $this->filterByQuery($combined, $query);
-        } else {
-            $filtered = $combined;
+        // Jika ada query spesifik, utamakan TFIDF
+        if (!empty($query)) {
+            return $this->tfidf->recommend($query)->take($limit);
         }
 
-        // Ambil hasil dengan limit yang ditentukan
-        return $filtered->take($limit);
+        // Gabungkan CBF dan CF hanya ketika tidak ada query
+        $cbfRecs = $this->cbf->getRecommendations($userId, '', $limit);
+        $cfRecs = $this->cf->getRecommendations($userId, '', $limit);
+
+        // Hitung bobot dinamis berdasarkan jumlah data
+        $cbfWeight = $cbfRecs->isNotEmpty() ? 0.7 : 0;
+        $cfWeight = $cfRecs->isNotEmpty() ? 0.3 : 0;
+
+        // Gabungkan rekomendasi
+        return $this->combineRecommendations($cbfRecs, $cfRecs, $cbfWeight, $cfWeight)
+            ->take($limit);
     }
 
-    private function combineRecommendations(Collection $cbfRecs, Collection $cfRecs, float $cbfWeight, float $cfWeight): Collection
-    {
-        $scores = [];
-
-        // Menggabungkan hasil berdasarkan ID dan skor
-        $this->addScoresToRecommendations($cbfRecs, $scores, $cbfWeight);
-        $this->addScoresToRecommendations($cfRecs, $scores, $cfWeight);
-
-        // Urutkan berdasarkan skor total
-        arsort($scores);
-
-        // Ambil ID dari rekomendasi yang paling relevan
-        $topIds = array_keys(array_slice($scores, 0, 10, true));
-
-        // Ambil laptop berdasarkan ID
-        return Laptop::whereIn('id', $topIds)->get()->keyBy('id');
-    }
-
-    private function addScoresToRecommendations(Collection $recs, array &$scores, float $weight)
-    {
-        foreach ($recs as $rec) {
-            $score = $scores[$rec->id] ?? 0;
-            $scores[$rec->id] = $score + $rec->predicted_score * $weight;
+    private function combineRecommendations(
+        Collection $cbfRecs, 
+        Collection $cfRecs,
+        float $cbfWeight, 
+        float $cfWeight
+    ): Collection {
+        $combined = collect();
+        
+        // Proses CBF recommendations
+        foreach ($cbfRecs as $laptop) {
+            $score = ($laptop->predicted_score ?? 0) * $cbfWeight;
+            $combined->put($laptop->id, [
+                'laptop' => $laptop,
+                'score' => $score,
+                'type' => 'cbf'
+            ]);
         }
-    }
 
-    private function filterByQuery(Collection $recs, string $query): Collection
-    {
-        // Misalnya filter berdasarkan harga dan kategori produk (contoh implementasi)
-        $queryLower = strtolower($query);
-        return $recs->filter(function ($laptop) use ($queryLower) {
-            // Cek apakah query cocok dengan nama atau kategori
-            return (strpos(strtolower($laptop->name), $queryLower) !== false) ||
-                    (strpos(strtolower($laptop->category), $queryLower) !== false);
-        });
+        // Proses CF recommendations
+        foreach ($cfRecs as $laptop) {
+            $currentScore = $combined->get($laptop->id)['score'] ?? 0;
+            $newScore = $currentScore + ($laptop->predicted_score ?? 0) * $cfWeight;
+            
+            $combined->put($laptop->id, [
+                'laptop' => $laptop,
+                'score' => $newScore,
+                'type' => $currentScore > 0 ? 'hybrid' : 'cf'
+            ]);
+        }
+
+        // Urutkan berdasarkan skor
+        return $combined->sortByDesc('score')
+            ->pluck('laptop');
     }
 }

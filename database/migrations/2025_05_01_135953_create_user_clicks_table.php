@@ -15,12 +15,11 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->foreignId('brand_id')->constrained()->onDelete('cascade');
-            $table->integer('click_count')->default(1);
+            $table->unsignedInteger('click_count')->default(0);
             $table->timestamps();
 
             $table->unique(['user_id', 'brand_id']);
-            $table->index('user_id');
-            $table->index('brand_id');
+            $table->index(['user_id', 'brand_id']);
         });
     }
 

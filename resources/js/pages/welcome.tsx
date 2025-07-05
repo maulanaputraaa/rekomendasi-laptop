@@ -1,3 +1,5 @@
+"use client"
+
 import type { SharedData } from "@/types"
 import { Head, Link, usePage } from "@inertiajs/react"
 import { Search, Cpu, BarChart2, MonitorCheck, Shield, ArrowRight, Laptop, Stars, ChevronRight } from "lucide-react"
@@ -35,7 +37,7 @@ export default function Welcome() {
 
   const laptopTypes = [
     { name: "Gaming", specs: "Performa tinggi, GPU kuat", icon: <Laptop className="w-5 h-5" /> },
-    { name: "Bisnis", specs: "Ringan, baterai tahan lama", icon: <Cpu className="w-5 h-5" /> },
+    { name: "Kantor", specs: "Ringan, baterai tahan lama", icon: <Cpu className="w-5 h-5" /> },
     { name: "Desain", specs: "Layar berkualitas, warna akurat", icon: <Stars className="w-5 h-5" /> },
     { name: "Pelajar", specs: "Terjangkau, multitasking", icon: <MonitorCheck className="w-5 h-5" /> },
   ]
@@ -109,7 +111,7 @@ export default function Welcome() {
             <nav className="flex items-center gap-4">
               {auth.user ? (
                 <Link
-                  href={route("dashboard")}
+                  href={auth.user?.role === "admin" ? route("admin.dashboard") : route("dashboard")}
                   className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground font-medium shadow-md hover:shadow-lg transition-all hover:scale-105 active:scale-95"
                 >
                   Dashboard
@@ -160,7 +162,13 @@ export default function Welcome() {
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
                   <Link
-                    href={auth.user ? route("dashboard") : route("login")}
+                    href={
+                      auth.user
+                        ? auth.user.role === "admin"
+                          ? route("admin.dashboard")
+                          : route("dashboard")
+                        : route("login")
+                    }
                     className="px-8 py-3.5 rounded-lg bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground font-medium shadow-lg hover:shadow-xl transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 group"
                   >
                     <span>Mulai Sekarang</span>
@@ -184,11 +192,7 @@ export default function Welcome() {
                 className="mt-16 relative max-w-4xl mx-auto"
               >
                 <div className="relative z-10 rounded-xl overflow-hidden shadow-2xl border border-border">
-                  <img
-                    src="/image/dashboard.png"
-                    alt="Laptop Finder Dashboard Preview"
-                    className="w-full h-auto"
-                  />
+                  <img src="/image/dashboard.png" alt="Laptop Finder Dashboard Preview" className="w-full h-auto" />
                 </div>
 
                 {/* Decorative elements */}
@@ -323,7 +327,13 @@ export default function Welcome() {
               </p>
 
               <Link
-                href={auth.user ? route("dashboard") : route("register")}
+                href={
+                  auth.user
+                    ? auth.user.role === "admin"
+                      ? route("admin.dashboard")
+                      : route("dashboard")
+                    : route("register")
+                }
                 className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-lg bg-white text-[var(--blue-600)] font-medium shadow-lg hover:shadow-xl transition-all hover:scale-105 active:scale-95 group"
               >
                 <span>{auth.user ? "Ke Dashboard" : "Daftar Sekarang"}</span>

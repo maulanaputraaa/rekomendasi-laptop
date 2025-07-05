@@ -87,7 +87,7 @@ export default function DashboardAdmin({ laptops, stats }: Props) {
                 <BarChart3 className="w-7 h-7 text-indigo-500" />
                 Dashboard Admin
             </h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">Kelola inventaris laptop dan pengguna sistem</p>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">Kelola data laptop</p>
             </div>
 
             <StatsSection stats={stats} />

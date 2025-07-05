@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import AppLayout from "@/layouts/app-layout"
 import type { Laptop } from "@/types"
-import {route} from "ziggy-js"
+import { route } from "ziggy-js"
 
 interface Props {
   query: string
@@ -28,7 +28,9 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    router.visit(`/search?query=${encodeURIComponent(query)}`)
+    if (query.trim()) {
+      router.visit(`/search?query=${encodeURIComponent(query.trim())}`)
+    }
   }
 
   const renderStars = (rating: number) => {
@@ -70,9 +72,24 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
     },
   }
 
+  // Function to get display title
+  const getDisplayTitle = () => {
+    if (!initialQuery || initialQuery.trim() === "") {
+      return "Hasil Pencarian"
+    }
+    return (
+      <>
+        Hasil Pencarian:{" "}
+        <span className="bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] bg-clip-text text-transparent">
+          {initialQuery}
+        </span>
+      </>
+    )
+  }
+
   return (
     <AppLayout>
-      <Head title={`Hasil Pencarian: ${query}`} />
+      <Head title={initialQuery ? `Hasil Pencarian: ${initialQuery}` : "Hasil Pencarian"} />
 
       <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         {/* Search Section */}
@@ -87,35 +104,36 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
+              className="min-w-0" // Prevent shrinking
             >
               <Button
                 variant="ghost"
                 onClick={() => router.visit("/dashboard")}
-                className="flex items-center text-muted-foreground hover:text-foreground"
+                className="flex items-center text-muted-foreground hover:text-foreground whitespace-nowrap"
               >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Kembali ke Dashboard
+                <ArrowLeft className="w-4 h-4 mr-2 flex-shrink-0" />
+                <span className="flex-shrink-0">Kembali ke Dashboard</span>
               </Button>
             </motion.div>
           </div>
 
           <form onSubmit={handleSearch} className="max-w-2xl mx-auto flex gap-4">
-            <div className="relative w-full">
+            <div className="relative flex-1 min-w-0">
               <Input
                 type="text"
                 placeholder="Cari berdasarkan merek, seri, atau spesifikasi..."
-                className="w-full rounded-lg border-border bg-background/50 shadow-sm focus:border-[var(--blue-600)] focus:ring-2 focus:ring-[var(--blue-500)/20] pl-4 h-12"
+                className="w-full min-w-[300px] rounded-lg border-border bg-background/50 shadow-sm focus:border-[var(--blue-600)] focus:ring-2 focus:ring-[var(--blue-500)/20] pl-4 h-12"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-shrink-0">
               <Button
                 type="submit"
-                className="bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground shadow-lg transition-all hover:shadow-xl h-12 px-6"
+                className="bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground shadow-lg transition-all hover:shadow-xl h-12 px-6 whitespace-nowrap"
               >
-                <Search className="w-5 h-5 mr-2" />
-                Cari
+                <Search className="w-5 h-5 mr-2 flex-shrink-0" />
+                <span className="flex-shrink-0">Cari</span>
               </Button>
             </motion.div>
           </form>
@@ -127,12 +145,9 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="text-4xl font-bold text-center text-foreground"
+            className="text-4xl font-bold text-center text-foreground min-h-[3rem] flex items-center justify-center"
           >
-            Hasil Pencarian:{" "}
-            <span className="bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] bg-clip-text text-transparent">
-              {query}
-            </span>
+            {getDisplayTitle()}
           </motion.h1>
 
           <AnimatePresence>
@@ -163,29 +178,30 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
                         <h2 className="text-xl font-semibold text-foreground group-hover:text-[var(--blue-600)] transition-colors">
                           {laptop.series} {laptop.model}
                         </h2>
-                        <p className="text-sm text-muted-foreground">
-                          {laptop.cpu} | RAM {laptop.ram}GB | {laptop.gpu}
-                        </p>
                       </div>
 
                       <div className="mt-4">
                         {laptop.average_rating !== undefined && renderStars(laptop.average_rating)}
                       </div>
 
-                      <div className="mt-6 flex items-center justify-between">
-                        <p className="text-2xl font-bold text-[var(--emerald-600)] dark:text-[var(--emerald-500)]">
-                          Rp {Number(laptop.price).toLocaleString("id-ID")}
-                        </p>
+                      <div className="mt-6 space-y-3">
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-[var(--emerald-600)] dark:text-[var(--emerald-500)]">
+                            Rp {Number(laptop.price).toLocaleString("id-ID")}
+                          </p>
+                        </div>
 
-                        <motion.div whileHover={{ x: 5 }} whileTap={{ scale: 0.95 }}>
-                          <Link
-                            href={route("laptops.show", laptop.id)}
-                            className="inline-flex items-center text-[var(--blue-600)] hover:text-[var(--blue-700)] dark:text-[var(--blue-400)] font-medium"
-                          >
-                            Detail
-                            <ChevronRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
-                          </Link>
-                        </motion.div>
+                        <div className="flex justify-center">
+                          <motion.div whileHover={{ x: 5 }} whileTap={{ scale: 0.95 }}>
+                            <Link
+                              href={route("laptops.show", laptop.id)}
+                              className="inline-flex items-center text-[var(--blue-600)] hover:text-[var(--blue-700)] dark:text-[var(--blue-400)] font-medium"
+                            >
+                              Detail
+                              <ChevronRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
+                            </Link>
+                          </motion.div>
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -215,7 +231,7 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
                   <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mt-8">
                     <Button
                       onClick={() => router.visit("/dashboard")}
-                      className="bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground"
+                      className="bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground whitespace-nowrap"
                     >
                       Kembali ke Dashboard
                     </Button>

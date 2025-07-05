@@ -14,15 +14,16 @@ return new class extends Migration
         Schema::create('laptops', function (Blueprint $table) {
             $table->id();
             $table->foreignId('brand_id')->constrained()->onDelete('cascade');
-            $table->string('series');
-            $table->string('model');
-            $table->string('cpu');
-            $table->string('ram');
-            $table->string('storage');
-            $table->string('gpu');
+            $table->string('series', 100);
+            $table->string('model', 100);
+            $table->string('cpu', 100);
+            $table->string('ram', 50);
+            $table->string('storage', 100);
+            $table->string('gpu', 100);
             $table->decimal('price', 12, 2);
             $table->timestamps();
 
+            // Index tambahan untuk pencarian/filter
             $table->index('brand_id');
             $table->index('price');
             $table->index('model');

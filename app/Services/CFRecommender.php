@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\UserClick;
 use App\Models\Laptop;
+use App\Models\Review;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class CFRecommender
@@ -11,7 +13,6 @@ class CFRecommender
     public function getRecommendations($userId, $limit = null, $clicksByUser = null)
     {
         $logContext = ['type' => 'CF', 'user_id' => $userId];
-
         Log::channel('recommendations')->info("Memulai proses rekomendasi", $logContext);
 
         // Ambil semua data click per user
@@ -34,6 +35,7 @@ class CFRecommender
         }
 
         $similarities = [];
+        $maxClick = max($targetClicks) ?: 1; // Normalisasi klik user
 
         // Hitung similarity dengan user lain
         foreach ($clicksByUser as $otherUserId => $clicks) {
@@ -42,70 +44,173 @@ class CFRecommender
             $otherClicks = $clicks->pluck('click_count', 'brand_id')->toArray();
             $similarity = $this->cosineSimilarity($targetClicks, $otherClicks);
 
-            if ($similarity > 0) {
+            if ($similarity > 0.1) { // Filter similarity rendah
                 $similarities[$otherUserId] = $similarity;
             }
         }
 
-        // Log similarity
+        // Hitung statistik similarity
+        $similarityStats = $this->calculateSimilarityStats($similarities);
+        $maxSimilarity = $similarityStats['max'] ?: 1; // Untuk normalisasi
+        
         Log::channel('recommendations')->debug("Hasil similarity", $logContext + [
             'total_similar_users' => count($similarities),
-            'similarity_range' => [
-                'min' => min($similarities),
-                'max' => max($similarities),
-                'avg' => array_sum($similarities) / count($similarities)
-            ]
+            'similarity_range' => $similarityStats
         ]);
 
-        // Hitung skor akhir
-        $finalScores = $targetClicks;
-        foreach ($similarities as $otherUserId => $similarity) {
-            $otherClicks = $clicksByUser[$otherUserId]->pluck('click_count', 'brand_id')->toArray();
-            foreach ($otherClicks as $brandId => $count) {
-                $finalScores[$brandId] = ($finalScores[$brandId] ?? 0) + ($similarity * $count);
-            }
+        // 1. Prekomputasi max klik untuk setiap user similar
+        $maxClicksByUser = [];
+        foreach ($clicksByUser as $otherUserId => $clicks) {
+            $clicksArray = $clicks->pluck('click_count')->toArray();
+            $maxClicksByUser[$otherUserId] = max($clicksArray) ?: 1;
         }
 
-        arsort($finalScores);
-        $brandIds = array_keys(array_slice($finalScores, 0, $limit, true));
+        // 2. Ambil semua laptop sekaligus
+        $allLaptops = Laptop::with('brand')->get()->keyBy('id');
+        $laptopScores = [];
 
-        // Ambil dan urutkan laptop
-        $laptops = Laptop::whereIn('brand_id', $brandIds)
-            ->with('brand')
-            ->get()
-            ->sortBy(function ($laptop) use ($brandIds) {
-                return array_search($laptop->brand_id, $brandIds);
-            });
+        // 3. Hitung skor untuk setiap laptop
+        foreach ($allLaptops as $laptop) {
+            // Faktor 1: Preferensi brand user
+            $brandWeight = isset($targetClicks[$laptop->brand_id]) 
+                ? ($targetClicks[$laptop->brand_id] / $maxClick) 
+                : 0;
+            
+            // Faktor 2: Rating laptop (25% -> diturunkan)
+            $rating = $this->getLaptopRating($laptop->id);
+            $ratingWeight = $rating / 5.0;
+            
+            // Faktor 3: Popularitas global (25% -> diturunkan)
+            $globalWeight = $this->getGlobalPopularity($laptop->id);
+            
+            // Skor dasar dengan bobot baru
+            $baseScore = ($brandWeight * 0.5) + ($ratingWeight * 0.25) + ($globalWeight * 0.25);
+            
+            // PERBAIKAN 2: Turunkan bonus similarity menjadi 25%
+            $similarityBonus = 0;
+            if (!empty($similarities)) {
+                foreach ($similarities as $otherUserId => $similarity) {
+                    $otherClicks = $clicksByUser[$otherUserId]->pluck('click_count', 'brand_id')->toArray();
+                    
+                    if (isset($otherClicks[$laptop->brand_id])) {
+                        // Hitung kontribusi dengan normalisasi
+                        $contribution = ($otherClicks[$laptop->brand_id] / $maxClicksByUser[$otherUserId])
+                                      * ($similarity / $maxSimilarity);
+                        
+                        // Tambahkan bonus 25%
+                        $similarityBonus += ($contribution * 0.25);
+                    }
+                }
+            }
+            
+            // Skor akhir dengan batasan
+            $laptopScores[$laptop->id] = min($baseScore + $similarityBonus, 1.0);
+        }
 
-        // Log hasil akhir
-        Log::channel('recommendations')->info("Hasil rekomendasi", $logContext + [
-            'recommendation_breakdown' => [
-                'brands' => $brandIds,
-                'laptops' => $laptops->map(function($laptop) {
-                    return [
-                        'id' => $laptop->id,
-                        'brand' => $laptop->brand->name,
-                        'model' => $laptop->model,
-                        'specs' => [
-                            'cpu' => $laptop->cpu,
-                            'gpu' => $laptop->gpu,
-                            'ram' => $laptop->ram
-                        ]
-                    ];
-                })->toArray()
-            ],
-            'statistics' => [
-                'total_laptops' => $laptops->count(),
-                'brand_distribution' => array_count_values($laptops->pluck('brand_id')->toArray())
-            ]
-        ]);
+        // Normalisasi skor akhir
+        $maxScore = max($laptopScores) ?: 1;
+        $normalizedScores = array_map(fn($score) => $score / $maxScore, $laptopScores);
+        
+        // Urutkan laptop berdasarkan skor tertinggi
+        arsort($normalizedScores);
+        $laptopIds = array_keys($normalizedScores);
+        
+        if ($limit !== null) {
+            $laptopIds = array_slice($laptopIds, 0, $limit);
+        }
 
-        return $laptops->values();
+        // Bangun hasil rekomendasi
+        $recommendations = $allLaptops->whereIn('id', $laptopIds)
+            ->map(function ($laptop) use ($normalizedScores) {
+                $laptop->cf_score = $normalizedScores[$laptop->id] ?? 0;
+                return $laptop;
+            })
+            ->sortByDesc('cf_score');
+
+        // Log hasil rekomendasi
+        $this->logRecommendationResults($logContext, $recommendations);
+
+        return $recommendations->values();
     }
 
-    private function cosineSimilarity($vec1, $vec2)
+    private function getLaptopRating($laptopId): float
     {
-        // Implementasi tetap sama
+        return Review::where('laptop_id', $laptopId)
+            ->avg('rating') ?? 4.0;
+    }
+
+    private function getGlobalPopularity($laptopId): float
+    {
+        $reviewCount = Review::where('laptop_id', $laptopId)->count();
+        $avgRating = Review::where('laptop_id', $laptopId)->avg('rating') ?? 4.0;
+        
+        $ratingComponent = ($avgRating / 5.0) * 0.6;
+        $reviewComponent = 0.4 * log($reviewCount + 1) / log(50);
+        
+        return min($ratingComponent + $reviewComponent, 1.0);
+    }
+
+    private function calculateSimilarityStats(array $similarities): array
+    {
+        if (empty($similarities)) {
+            return ['min' => 0, 'max' => 0, 'avg' => 0];
+        }
+        
+        return [
+            'min' => min($similarities),
+            'max' => max($similarities),
+            'avg' => array_sum($similarities) / count($similarities)
+        ];
+    }
+
+    private function logRecommendationResults(array $logContext, Collection $recommendations)
+    {
+        $scoreValues = $recommendations->pluck('cf_score')->toArray();
+        $scoreStats = [
+            'min' => count($scoreValues) ? min($scoreValues) : 0,
+            'max' => count($scoreValues) ? max($scoreValues) : 0,
+            'avg' => count($scoreValues) ? array_sum($scoreValues) / count($scoreValues) : 0
+        ];
+
+        $brandDistribution = [];
+        foreach ($recommendations as $laptop) {
+            $brandId = $laptop->brand_id;
+            $brandDistribution[$brandId] = ($brandDistribution[$brandId] ?? 0) + 1;
+        }
+
+        $sampleScores = $recommendations->take(5)->map(function($laptop) {
+            return [
+                'id' => $laptop->id,
+                'brand' => $laptop->brand->name,
+                'model' => $laptop->model,
+                'cf_score' => round($laptop->cf_score, 4),
+                'specs' => [
+                    'cpu' => $laptop->cpu,
+                    'gpu' => $laptop->gpu,
+                    'ram' => $laptop->ram
+                ]
+            ];
+        });
+
+        Log::channel('recommendations')->info("Hasil rekomendasi", $logContext + [
+            'recommendation_breakdown' => [
+                'sample_scores' => $sampleScores,
+                'total_laptops' => $recommendations->count()
+            ],
+            'statistics' => [
+                'total_laptops' => $recommendations->count(),
+                'brand_distribution' => $brandDistribution,
+                'score_range' => [
+                    'min' => round($scoreStats['min'], 4),
+                    'max' => round($scoreStats['max'], 4),
+                    'avg' => round($scoreStats['avg'], 4)
+                ]
+            ]
+        ]);
+    }
+
+    private function cosineSimilarity(array $vec1, array $vec2): float
+    {
         $commonKeys = array_intersect(array_keys($vec1), array_keys($vec2));
         if (count($commonKeys) === 0) return 0;
 
@@ -128,6 +233,8 @@ class CFRecommender
         $magnitude1 = sqrt($magnitude1);
         $magnitude2 = sqrt($magnitude2);
 
-        return ($magnitude1 && $magnitude2) ? $dotProduct / ($magnitude1 * $magnitude2) : 0;
+        return ($magnitude1 && $magnitude2)
+            ? $dotProduct / ($magnitude1 * $magnitude2)
+            : 0;
     }
 }
