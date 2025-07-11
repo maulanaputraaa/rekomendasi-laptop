@@ -15,7 +15,6 @@ class ReviewController extends Controller
             'rating' => 'required|integer|min:1|max:5',
             'review' => 'nullable|string',
         ]);
-
         return Review::create($request->all());
     }
 }

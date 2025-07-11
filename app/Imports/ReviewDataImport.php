@@ -17,27 +17,18 @@ class ReviewDataImport implements ToCollection
     {
         $rows->skip(1)->each(function ($row) {
             $this->totalData++;
-            
             [$tanggal, $responder, $brandName, $series, $model, $cpu, $ram, $storage, $gpu, $price, $rating, $review] = $row;
-
-            // Normalisasi data
             $responderName = trim($responder);
             $reviewText = trim($review);
-
-            // Validasi duplikat
             if (Review::where('responder_name', $responderName)
                 ->where('review', $reviewText)
                 ->exists()) {
                 $this->duplicates++;
                 return;
             }
-
-            // Proses brand
             $brand = Brand::firstOrCreate([
                 'name' => trim($brandName),
             ]);
-
-            // Proses laptop
             $laptop = Laptop::firstOrCreate([
                 'brand_id' => $brand->id,
                 'series' => trim($series),
@@ -49,8 +40,6 @@ class ReviewDataImport implements ToCollection
                 'gpu' => trim($gpu),
                 'price' => (int) str_replace('.', '', $price),
             ]);
-
-            // Tambahkan review
             Review::create([
                 'laptop_id' => $laptop->id,
                 'responder_name' => $responderName,

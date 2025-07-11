@@ -4,7 +4,6 @@ import { Search, Laptop, ChevronRight } from "lucide-react"
 import { useState } from "react"
 import { FaStar, FaStarHalfAlt, FaRegStar } from "react-icons/fa"
 import { motion } from "framer-motion"
-
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import AppLayout from "@/layouts/app-layout"
@@ -60,7 +59,6 @@ export default function Dashboard({ laptops }: Props) {
     }
   }
 
-  // Animation variants
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {

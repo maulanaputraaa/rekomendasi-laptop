@@ -1,7 +1,4 @@
-"use client"
-
 import type React from "react"
-
 import { Head, useForm, usePage } from "@inertiajs/react"
 import AppLayout from "@/layouts/app-layout"
 import { type ChangeEvent, useEffect, useState, useCallback } from "react"
@@ -13,7 +10,6 @@ import toast, { Toaster } from "react-hot-toast"
 import { Progress } from "@/components/ui/progress"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import type { Auth } from "@/types"
-
 interface Props {
   auth: Auth
 }
@@ -36,19 +32,18 @@ export default function UploadData({ auth }: Props) {
   useEffect(() => {
     if (flash?.success) {
       toast.success(flash.success, {
-        duration: 5000, // Longer duration for success messages
+        duration: 5000,
         icon: "🎉",
       })
     }
     if (flash?.error) {
       toast.error(flash.error, {
-        duration: 5000, // Longer duration for error messages
+        duration: 5000,
         icon: "❌",
       })
     }
   }, [flash])
 
-  // Redirect non-admin users
   useEffect(() => {
     if (auth.user?.role !== "admin") {
       router.visit("/")
@@ -56,7 +51,6 @@ export default function UploadData({ auth }: Props) {
     }
   }, [auth.user?.role])
 
-  // Simulate upload progress
   useEffect(() => {
     if (processing) {
       const interval = setInterval(() => {
@@ -133,10 +127,8 @@ export default function UploadData({ auth }: Props) {
           reset()
           setUploadProgress(100)
           setTimeout(() => setUploadProgress(0), 1000)
-          // We don't need to show a toast here as the flash message from the controller will trigger it
         },
         onError: (errors) => {
-          // Show error toast if there's a validation error
           if (errors.file) {
             toast.error(errors.file)
           } else {
@@ -149,7 +141,6 @@ export default function UploadData({ auth }: Props) {
     [data.file, post, reset],
   )
 
-  // Debug flash messages
   useEffect(() => {
     console.log("Flash messages:", flash)
   }, [flash])

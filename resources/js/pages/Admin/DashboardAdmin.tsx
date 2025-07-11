@@ -291,7 +291,7 @@ const ConfirmDeleteToast = ({ toastId, onConfirm }: { toastId: string; onConfirm
                     variant="destructive"
                     onClick={() => {
                         onConfirm()
-                        toast.dismiss(toastId) // 👉 tambahkan ini agar toast ditutup
+                        toast.dismiss(toastId)
                     }}
                     className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700"
                     >

@@ -10,25 +10,20 @@ use Illuminate\Http\Request;
 
 class LaptopController extends Controller
 {
-    // Menampilkan detail laptop berdasarkan id
     public function show($id)
     {
         $laptop = Laptop::with(['brand', 'reviews'])->findOrFail($id);
 
         if (Auth::check()) {
             $user = Auth::user();
-
-            // Hanya tambahkan click jika user bukan admin
             if ($user->role !== 'admin') {
                 $brandId = $laptop->brand->id;
-
                 UserClick::updateOrCreate(
                     ['user_id' => $user->id, 'brand_id' => $brandId],
                     ['click_count' => DB::raw('click_count + 1')]
                 );
             }
         }
-
         return inertia('Laptop/LaptopDetail', [
             'laptop' => [
                 'id' => $laptop->id,
@@ -54,15 +49,11 @@ class LaptopController extends Controller
         ]);
     }
 
-
-
-    // Menampilkan daftar semua laptop
     public function index()
     {
-        // Mengambil semua laptop dengan relasi brand
         return Laptop::with('brand')->get();
     }
-    
+
     public function destroy(Laptop $laptop)
     {
         try {

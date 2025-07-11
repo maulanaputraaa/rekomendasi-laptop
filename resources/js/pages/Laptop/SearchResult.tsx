@@ -1,19 +1,14 @@
-"use client"
-
 import type React from "react"
-
 import { Head, Link } from "@inertiajs/react"
 import { router } from "@inertiajs/react"
 import { Search, Star, StarHalf, ChevronRight, ArrowLeft } from "lucide-react"
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import AppLayout from "@/layouts/app-layout"
 import type { Laptop } from "@/types"
 import { route } from "ziggy-js"
-
 interface Props {
   query: string
   results: (Laptop & { average_rating?: number })[]
@@ -52,7 +47,6 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
     )
   }
 
-  // Animation variants
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
@@ -72,7 +66,6 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
     },
   }
 
-  // Function to get display title
   const getDisplayTitle = () => {
     if (!initialQuery || initialQuery.trim() === "") {
       return "Hasil Pencarian"
@@ -104,7 +97,7 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
-              className="min-w-0" // Prevent shrinking
+              className="min-w-0"
             >
               <Button
                 variant="ghost"

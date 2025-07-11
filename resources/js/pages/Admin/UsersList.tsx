@@ -1,5 +1,3 @@
-"use client"
-
 import { Head, router, usePage, useForm } from "@inertiajs/react"
 import { route } from "ziggy-js"
 import AppLayout from "@/layouts/app-layout"
@@ -53,7 +51,6 @@ export default function UserList({ users }: Props) {
   const [searchTerm, setSearchTerm] = useState("")
   const [filteredUsers, setFilteredUsers] = useState<User[]>(users)
 
-  // Filter users based on search term
   useEffect(() => {
     if (searchTerm.trim() === "") {
       setFilteredUsers(users)
@@ -68,7 +65,6 @@ export default function UserList({ users }: Props) {
     }
   }, [searchTerm, users])
 
-  // Handle flash messages
   useEffect(() => {
     if (flash?.success) {
       toast.success(flash.success)
@@ -78,7 +74,6 @@ export default function UserList({ users }: Props) {
     }
   }, [flash])
 
-  // Form Create
   const {
     data: createData,
     setData: setCreateData,
@@ -94,7 +89,6 @@ export default function UserList({ users }: Props) {
     role: "user",
   })
 
-  // Form Edit
   const {
     data: editData,
     setData: setEditData,
@@ -110,7 +104,6 @@ export default function UserList({ users }: Props) {
     role: "user",
   })
 
-  // Handle Create
   const handleCreate = () => {
     post(route("admin.users.store"), {
       onSuccess: () => {
@@ -121,7 +114,6 @@ export default function UserList({ users }: Props) {
     })
   }
 
-  // Handle Edit
   const handleEdit = () => {
     if (!selectedUser) return
 
@@ -134,7 +126,6 @@ export default function UserList({ users }: Props) {
     })
   }
 
-  // Handle Delete
   const handleDelete = () => {
     if (!selectedUser) return
 
@@ -146,7 +137,6 @@ export default function UserList({ users }: Props) {
     })
   }
 
-  // Open Edit Modal
   const openEditModal = (user: User) => {
     setSelectedUser(user)
     setEditData({
@@ -162,7 +152,6 @@ export default function UserList({ users }: Props) {
   const adminCount = filteredUsers.filter((u) => u.role === "admin").length
   const userCount = filteredUsers.filter((u) => u.role === "user").length
 
-  // Animation variants
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {

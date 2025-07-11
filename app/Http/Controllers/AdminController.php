@@ -16,7 +16,6 @@ class AdminController extends Controller
             'total_brands' => Brand::count(),
             'avg_price' => Laptop::avg('price') ?? 0,
         ];
-
         return Inertia::render('Admin/DashboardAdmin', [
             'stats' => $stats, // Pastikan ini ada
             'laptops' => Laptop::with('brand')->take(null)->get(),

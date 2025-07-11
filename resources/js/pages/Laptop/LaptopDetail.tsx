@@ -5,7 +5,6 @@ import type { Laptop, Review } from "@/types"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Star, StarHalf, Cpu, MemoryStick, HardDrive, Monitor, Calendar, MessageSquare } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-
 interface Props {
   laptop: Laptop & {
     reviews: Review[]

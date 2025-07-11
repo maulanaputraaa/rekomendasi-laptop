@@ -19,10 +19,8 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
-
-        // Menggunakan middleware admin di sini
         $middleware->alias([
-            'admin' => \App\Http\Middleware\IsAdmin::class,  // Pastikan middleware sudah benar
+            'admin' => \App\Http\Middleware\IsAdmin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

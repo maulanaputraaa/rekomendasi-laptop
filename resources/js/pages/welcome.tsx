@@ -1,5 +1,3 @@
-"use client"
-
 import type { SharedData } from "@/types"
 import { Head, Link, usePage } from "@inertiajs/react"
 import { Search, Cpu, BarChart2, MonitorCheck, Shield, ArrowRight, Laptop, Stars, ChevronRight } from "lucide-react"

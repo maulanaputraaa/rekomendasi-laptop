@@ -13,7 +13,6 @@ class UserController extends Controller
     public function index()
     {
         $users = User::select('id', 'name', 'email', 'role')->get();
-
         return Inertia::render('Admin/UsersList', [
             'users' => $users
         ]);
@@ -27,7 +26,6 @@ class UserController extends Controller
             'password' => 'required|string|min:8|confirmed',
             'role' => 'required|in:admin,user'
         ]);
-
         try {
             User::create([
                 'name' => $request->name,
@@ -35,9 +33,7 @@ class UserController extends Controller
                 'password' => Hash::make($request->password),
                 'role' => $request->role
             ]);
-
             return redirect()->route('admin.users.index')->with('success', 'User created successfully');
-
         } catch (\Exception $e) {
             return redirect()->route('admin.users.index')->with('error', $e->getMessage());
         }
@@ -49,15 +45,11 @@ class UserController extends Controller
             if (optional(Auth::user())->id === $user->id) {
                 throw new \Exception('Cannot delete your own account');
             }
-
             if ($user->role === 'admin' && User::where('role', 'admin')->count() === 1) {
                 throw new \Exception('Cannot delete the only admin user');
             }
-
             $user->delete();
-
             return redirect()->route('admin.users.index')->with('success', 'User deleted successfully');
-
         } catch (\Exception $e) {
             return redirect()->route('admin.users.index')->with('error', $e->getMessage());
         }
@@ -71,22 +63,17 @@ class UserController extends Controller
             'password' => 'nullable|string|min:8|confirmed',
             'role' => 'required|in:admin,user'
         ]);
-
         try {
             $updateData = [
                 'name' => $request->name,
                 'email' => $request->email,
                 'role' => $request->role
             ];
-
             if ($request->password) {
                 $updateData['password'] = Hash::make($request->password);
             }
-
             $user->update($updateData);
-
             return redirect()->route('admin.users.index')->with('success', 'User updated successfully');
-
         } catch (\Exception $e) {
             return redirect()->route('admin.users.index')->with('error', $e->getMessage());
         }

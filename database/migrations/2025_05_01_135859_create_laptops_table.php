@@ -23,7 +23,6 @@ return new class extends Migration
             $table->decimal('price', 12, 2);
             $table->timestamps();
 
-            // Index tambahan untuk pencarian/filter
             $table->index('brand_id');
             $table->index('price');
             $table->index('model');
