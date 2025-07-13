@@ -1,31 +1,153 @@
 import type React from "react"
-import { Head, Link } from "@inertiajs/react"
+import { Head } from "@inertiajs/react"
 import { router } from "@inertiajs/react"
-import { Search, Star, StarHalf, ChevronRight, ArrowLeft } from "lucide-react"
+import { Search, Star, StarHalf, ChevronRight, ArrowLeft, Filter, X } from "lucide-react"
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import AppLayout from "@/layouts/app-layout"
 import type { Laptop } from "@/types"
-import { route } from "ziggy-js"
+
+interface FilterState {
+  brands: string[]
+  ram: string[]
+  usage: string[]
+  processor: string[]
+  priceRange: {
+    min: number
+    max: number
+  }
+}
 interface Props {
   query: string
   results: (Laptop & { average_rating?: number })[]
+  filters?: {
+    brands?: string
+    ram?: string
+    usage?: string
+    processor?: string
+    price_min?: number
+    price_max?: number
+  }
 }
 
-export default function SearchResult({ query: initialQuery, results }: Props) {
+export default function SearchResult({ query: initialQuery, results, filters }: Props) {
   const [query, setQuery] = useState(initialQuery)
+  const [currentFilters, setCurrentFilters] = useState<FilterState>({
+    brands: [],
+    ram: [],
+    usage: [],
+    processor: [],
+    priceRange: {
+      min: 0,
+      max: 50000000
+    }
+  })
+
+  // Data filter options (sama dengan dashboard)
+  const filterOptions = {
+    brands: ["ASUS", "Acer", "HP", "Lenovo", "MSI"],
+    ram: ["4GB", "8GB", "16GB", "32GB", "64GB"],
+    usage: ["Gaming", "Kantor", "Desain Grafis", "Programming", "Multimedia", "Sekolah"],
+    processor: ["Intel", "AMD"]
+  }
 
   useEffect(() => {
     setQuery(initialQuery)
-  }, [initialQuery])
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (query.trim()) {
-      router.visit(`/search?query=${encodeURIComponent(query.trim())}`)
+    
+    // Set filter dari props jika ada
+    if (filters) {
+      setCurrentFilters({
+        brands: filters.brands ? filters.brands.split(',') : [],
+        ram: filters.ram ? filters.ram.split(',') : [],
+        usage: filters.usage ? filters.usage.split(',') : [],
+        processor: filters.processor ? filters.processor.split(',') : [],
+        priceRange: {
+          min: filters.price_min || 0,
+          max: filters.price_max || 50000000
+        }
+      })
     }
+  }, [initialQuery, filters])
+
+  const hasActiveFilters = () => {
+    return currentFilters.brands.length > 0 || 
+           currentFilters.ram.length > 0 || 
+           currentFilters.usage.length > 0 || 
+           currentFilters.processor.length > 0 ||
+           currentFilters.priceRange.min > 0 || 
+           currentFilters.priceRange.max < 50000000
+  }
+
+  const handleFilterChange = (category: keyof FilterState, value: string | { min: number; max: number }) => {
+    if (category === 'priceRange') {
+      setCurrentFilters(prev => ({
+        ...prev,
+        priceRange: value as { min: number; max: number }
+      }))
+    } else {
+      setCurrentFilters(prev => ({
+        ...prev,
+        [category]: Array.isArray(prev[category]) 
+          ? (prev[category] as string[]).includes(value as string)
+            ? (prev[category] as string[]).filter(item => item !== value)
+            : [...(prev[category] as string[]), value as string]
+          : [value as string]
+      }))
+    }
+  }
+
+  const clearFilters = () => {
+    setCurrentFilters({
+      brands: [],
+      ram: [],
+      usage: [],
+      processor: [],
+      priceRange: {
+        min: 0,
+        max: 50000000
+      }
+    })
+  }
+
+  const handleNewSearch = () => {
+    if (query.trim() || hasActiveFilters()) {
+      const searchParams = new URLSearchParams()
+      
+      if (query.trim()) {
+        searchParams.append('query', query)
+      }
+      
+      if (currentFilters.brands.length > 0) {
+        searchParams.append('brands', currentFilters.brands.join(','))
+      }
+      if (currentFilters.ram.length > 0) {
+        searchParams.append('ram', currentFilters.ram.join(','))
+      }
+      if (currentFilters.usage.length > 0) {
+        searchParams.append('usage', currentFilters.usage.join(','))
+      }
+      if (currentFilters.processor.length > 0) {
+        searchParams.append('processor', currentFilters.processor.join(','))
+      }
+      if (currentFilters.priceRange.min > 0 || currentFilters.priceRange.max < 50000000) {
+        searchParams.append('price_min', currentFilters.priceRange.min.toString())
+        searchParams.append('price_max', currentFilters.priceRange.max.toString())
+      }
+      
+      router.visit(`/search?${searchParams.toString()}`)
+    }
+  }
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0
+    }).format(price)
   }
 
   const renderStars = (rating: number) => {
@@ -110,7 +232,10 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
             </motion.div>
           </div>
 
-          <form onSubmit={handleSearch} className="max-w-2xl mx-auto flex gap-4">
+          <form onSubmit={(e) => {
+            e.preventDefault()
+            handleNewSearch()
+          }} className="max-w-2xl mx-auto flex gap-4">
             <div className="relative flex-1 min-w-0">
               <Input
                 type="text"
@@ -132,7 +257,7 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
           </form>
         </motion.div>
 
-        {/* Results Section */}
+        {/* Results Section with Sidebar */}
         <div className="space-y-8">
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
@@ -143,14 +268,195 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
             {getDisplayTitle()}
           </motion.h1>
 
-          <AnimatePresence>
-            {results.length > 0 ? (
-              <motion.div
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
-              >
+          {/* Main Content with Sidebar */}
+          <div className="flex gap-6">
+            {/* Filter Sidebar */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+              className="w-80 flex-shrink-0"
+            >
+              <div className="bg-card rounded-xl shadow-lg border border-border p-6 sticky top-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    <Filter className="w-5 h-5" />
+                    Filter Pencarian
+                  </h2>
+                  {hasActiveFilters() && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={clearFilters}
+                      className="text-xs"
+                    >
+                      <X className="w-3 h-3 mr-1" />
+                      Reset
+                    </Button>
+                  )}
+                </div>
+
+                <div className="space-y-6">
+                  {/* Brand Filter */}
+                  <div>
+                    <h3 className="font-medium mb-3 text-sm text-muted-foreground uppercase tracking-wide">Brand</h3>
+                    <div className="space-y-3">
+                      {filterOptions.brands.map((brand) => (
+                        <div key={brand} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`brand-${brand}`}
+                            checked={currentFilters.brands.includes(brand)}
+                            onCheckedChange={() => handleFilterChange('brands', brand)}
+                          />
+                          <Label
+                            htmlFor={`brand-${brand}`}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          >
+                            {brand}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* RAM Filter */}
+                  <div>
+                    <h3 className="font-medium mb-3 text-sm text-muted-foreground uppercase tracking-wide">RAM</h3>
+                    <div className="space-y-3">
+                      {filterOptions.ram.map((ram) => (
+                        <div key={ram} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`ram-${ram}`}
+                            checked={currentFilters.ram.includes(ram)}
+                            onCheckedChange={() => handleFilterChange('ram', ram)}
+                          />
+                          <Label
+                            htmlFor={`ram-${ram}`}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          >
+                            {ram}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Usage Filter */}
+                  <div>
+                    <h3 className="font-medium mb-3 text-sm text-muted-foreground uppercase tracking-wide">Kebutuhan</h3>
+                    <div className="space-y-3">
+                      {filterOptions.usage.map((usage) => (
+                        <div key={usage} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`usage-${usage}`}
+                            checked={currentFilters.usage.includes(usage)}
+                            onCheckedChange={() => handleFilterChange('usage', usage)}
+                          />
+                          <Label
+                            htmlFor={`usage-${usage}`}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          >
+                            {usage}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Processor Filter */}
+                  <div>
+                    <h3 className="font-medium mb-3 text-sm text-muted-foreground uppercase tracking-wide">Prosesor</h3>
+                    <div className="space-y-3">
+                      {filterOptions.processor.map((processor) => (
+                        <div key={processor} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`processor-${processor}`}
+                            checked={currentFilters.processor.includes(processor)}
+                            onCheckedChange={() => handleFilterChange('processor', processor)}
+                          />
+                          <Label
+                            htmlFor={`processor-${processor}`}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          >
+                            {processor}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Price Range Filter */}
+                  <div>
+                    <h3 className="font-medium mb-3 text-sm text-muted-foreground uppercase tracking-wide">Rentang Harga</h3>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label htmlFor="price-min" className="text-xs text-muted-foreground">Minimum</Label>
+                          <Input
+                            id="price-min"
+                            type="number"
+                            placeholder="0"
+                            value={currentFilters.priceRange.min === 0 ? '' : currentFilters.priceRange.min}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value) || 0
+                              handleFilterChange('priceRange', {
+                                ...currentFilters.priceRange,
+                                min: value
+                              })
+                            }}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="price-max" className="text-xs text-muted-foreground">Maksimum</Label>
+                          <Input
+                            id="price-max"
+                            type="number"
+                            placeholder="50000000"
+                            value={currentFilters.priceRange.max === 50000000 ? '' : currentFilters.priceRange.max}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value) || 50000000
+                              handleFilterChange('priceRange', {
+                                ...currentFilters.priceRange,
+                                max: value
+                              })
+                            }}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {currentFilters.priceRange.min === 0 && currentFilters.priceRange.max === 50000000 
+                          ? "Semua harga" 
+                          : `${formatPrice(currentFilters.priceRange.min)} - ${formatPrice(currentFilters.priceRange.max)}`
+                        }
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Apply Filters Button */}
+                  <Button
+                    onClick={handleNewSearch}
+                    className="w-full bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground"
+                    disabled={!query.trim() && !hasActiveFilters()}
+                  >
+                    <Search className="w-4 h-4 mr-2" />
+                    Terapkan Filter
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Results Grid */}
+            <div className="flex-1">
+              <AnimatePresence>
+                {results.length > 0 ? (
+                  <motion.div
+                    variants={containerVariants}
+                    initial="hidden"
+                    animate="visible"
+                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+                  >
                 {results.map((laptop) => (
                   <motion.div
                     key={laptop.id}
@@ -163,39 +469,43 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
                     <div className="p-6 relative z-10">
                       <div className="flex items-center justify-between mb-4">
                         <span className="inline-block bg-[var(--blue-500)/10] text-[var(--blue-600)] dark:bg-[var(--blue-500)/20] dark:text-[var(--blue-400)] text-sm px-3 py-1 rounded-full font-medium">
-                          {laptop.brand?.name}
+                          {laptop.brand?.name || 'Unknown'}
                         </span>
                       </div>
 
                       <div className="space-y-2">
-                        <h2 className="text-xl font-semibold text-foreground group-hover:text-[var(--blue-600)] transition-colors">
-                          {laptop.series} {laptop.model}
-                        </h2>
+                        <h3 className="text-xl font-semibold text-foreground group-hover:text-[var(--blue-600)] transition-colors line-clamp-2">
+                          {`${laptop.series} ${laptop.model}`}
+                        </h3>
+                        <p className="text-sm text-muted-foreground line-clamp-1">CPU: {laptop.cpu}</p>
+                        <p className="text-sm text-muted-foreground line-clamp-1">RAM: {laptop.ram}</p>
                       </div>
 
                       <div className="mt-4">
-                        {laptop.average_rating !== undefined && renderStars(laptop.average_rating)}
+                        <p className="text-2xl font-bold text-[var(--emerald-600)] dark:text-[var(--emerald-500)]">
+                          Rp {laptop.price.toLocaleString('id-ID')}
+                        </p>
                       </div>
 
-                      <div className="mt-6 space-y-3">
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-[var(--emerald-600)] dark:text-[var(--emerald-500)]">
-                            Rp {Number(laptop.price).toLocaleString("id-ID")}
-                          </p>
-                        </div>
-
-                        <div className="flex justify-center">
-                          <motion.div whileHover={{ x: 5 }} whileTap={{ scale: 0.95 }}>
-                            <Link
-                              href={route("laptops.show", laptop.id)}
-                              className="inline-flex items-center text-[var(--blue-600)] hover:text-[var(--blue-700)] dark:text-[var(--blue-400)] font-medium"
-                            >
-                              Detail
-                              <ChevronRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
-                            </Link>
-                          </motion.div>
+                      <div className="mt-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {typeof laptop.average_rating === "number" ? (
+                            renderStars(laptop.average_rating)
+                          ) : (
+                            <span className="text-sm text-muted-foreground">{laptop.average_rating || 'Belum ada rating'}</span>
+                          )}
                         </div>
                       </div>
+
+                      <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="mt-6">
+                        <Button
+                          className="w-full bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground hover:shadow-lg group"
+                          onClick={() => router.visit(`/laptops/${laptop.id}`)}
+                        >
+                          Lihat Detail
+                          <ChevronRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                        </Button>
+                      </motion.div>
                     </div>
                   </motion.div>
                 ))}
@@ -233,6 +543,8 @@ export default function SearchResult({ query: initialQuery, results }: Props) {
               </motion.div>
             )}
           </AnimatePresence>
+            </div>
+          </div>
         </div>
       </div>
     </AppLayout>
