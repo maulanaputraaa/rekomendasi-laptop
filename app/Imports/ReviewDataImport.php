@@ -30,24 +30,23 @@ class ReviewDataImport implements ToCollection
             $brand = Brand::firstOrCreate([
                 'name' => trim($brandName),
             ]);
-            // Cari laptop yang sudah ada atau buat baru
+            // Cari laptop yang sudah ada berdasarkan brand, series, model DAN spesifikasi
             $laptop = Laptop::where([
                 'brand_id' => $brand->id,
                 'series' => trim($series),
                 'model' => trim($model),
+                'cpu' => trim($cpu),
+                'ram' => (int) $ram,
+                'storage' => (int) $storage,
+                'gpu' => trim($gpu),
             ])->first();
 
             $currentPrice = (int) str_replace('.', '', $price);
             
             if ($laptop) {
-                // Update spesifikasi laptop jika berbeda
-                $laptop->update([
-                    'cpu' => trim($cpu),
-                    'ram' => (int) $ram,
-                    'storage' => (int) $storage,
-                    'gpu' => trim($gpu),
-                ]);
-
+                // Laptop dengan spesifikasi yang sama ditemukan
+                // Hanya perlu menambahkan harga baru jika berbeda
+                
                 // Simpan harga baru ke tabel laptop_prices jika belum ada
                 $existingPrice = LaptopPrice::where([
                     'laptop_id' => $laptop->id,
@@ -61,13 +60,13 @@ class ReviewDataImport implements ToCollection
                         'price' => $currentPrice,
                         'source' => 'import'
                     ]);
-                }
 
-                // Update harga rata-rata di tabel laptops
-                $averagePrice = $laptop->laptopPrices()->avg('price');
-                $laptop->update(['price' => round($averagePrice, 2)]);
+                    // Update harga rata-rata di tabel laptops
+                    $averagePrice = $laptop->laptopPrices()->avg('price');
+                    $laptop->update(['price' => round($averagePrice, 2)]);
+                }
             } else {
-                // Jika laptop belum ada, buat baru
+                // Laptop dengan spesifikasi unik, buat entry baru
                 $laptop = Laptop::create([
                     'brand_id' => $brand->id,
                     'series' => trim($series),
