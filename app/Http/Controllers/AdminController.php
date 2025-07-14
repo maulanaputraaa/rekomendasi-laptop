@@ -29,9 +29,11 @@ class AdminController extends Controller
         ];
 
         // Ambil data untuk ditampilkan di dashboard
+        $laptops = Laptop::with(['brand', 'laptopPrices'])->latest()->get();
+
         return Inertia::render('Admin/DashboardAdmin', [
             'stats' => $stats,
-            'laptops' => Laptop::with('brand')->latest()->take(10)->get(),
+            'laptops' => $laptops,
             'users' => User::latest()->take(8)->get()
         ]);
     }

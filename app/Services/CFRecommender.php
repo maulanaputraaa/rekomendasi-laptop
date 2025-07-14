@@ -34,9 +34,15 @@ class CFRecommender
      */
     public function getRecommendations($userId, $limit = null, $clicksByUser = null)
     {
+        $startTime = microtime(true);
         // Setup logging
-        $logContext = ['type' => 'CF', 'user_id' => $userId];
-        Log::channel('recommendations')->info("Memulai proses rekomendasi", $logContext);
+        $logContext = [
+            'type' => 'CF', 
+            'user_id' => $userId,
+            'limit' => $limit,
+            'timestamp' => now()->toISOString()
+        ];
+        Log::channel('recommendations')->info("👥 Memulai Collaborative Filtering", $logContext);
         
         // Ambil data klik semua user jika tidak disediakan
         $clicksByUser = $clicksByUser ?? UserClick::all()->groupBy('user_id');
@@ -103,8 +109,23 @@ class CFRecommender
             ->sortByDesc('cf_score');
         
         // Log hasil rekomendasi
-        $this->logRecommendationResults($logContext, $recommendations);
+        $processingTime = round((microtime(true) - $startTime) * 1000, 2);
         
+        Log::channel('recommendations')->info("✅ CF rekomendasi selesai", $logContext + [
+            'results_count' => $recommendations->count(),
+            'processing_time_ms' => $processingTime,
+            'similarity_stats' => [
+                'similar_users_found' => count($similarities),
+                'max_similarity' => round($maxSimilarity, 3)
+            ],
+            'top_results' => $recommendations->take(3)->map(fn($laptop) => [
+                'id' => $laptop->id,
+                'name' => "{$laptop->brand->name} {$laptop->series} {$laptop->model}",
+                'cf_score' => round($laptop->cf_score, 3),
+                'price' => 'Rp ' . number_format($laptop->price)
+            ])->toArray()
+        ]);
+
         return $recommendations->values();
     }
 
@@ -298,60 +319,12 @@ class CFRecommender
     }
 
     /**
-     * Mencatat hasil rekomendasi ke log
-     * 
-     * @param array $logContext Konteks log [type, user_id]
-     * @param Collection $recommendations Hasil rekomendasi
+     * Mencatat hasil rekomendasi ke log - Method ini sudah tidak digunakan
+     * Logging sudah dipindah ke main method untuk performance yang lebih baik
      */
     private function logRecommendationResults(array $logContext, Collection $recommendations)
     {
-        $scoreValues = $recommendations->pluck('cf_score')->toArray();
-        
-        // Statistik skor
-        $scoreStats = [
-            'min' => count($scoreValues) ? min($scoreValues) : 0,
-            'max' => count($scoreValues) ? max($scoreValues) : 0,
-            'avg' => count($scoreValues) ? array_sum($scoreValues) / count($scoreValues) : 0
-        ];
-        
-        // Distribusi brand
-        $brandDistribution = [];
-        foreach ($recommendations as $laptop) {
-            $brandId = $laptop->brand_id;
-            $brandDistribution[$brandId] = ($brandDistribution[$brandId] ?? 0) + 1;
-        }
-        
-        // Contoh skor laptop
-        $sampleScores = $recommendations->take(5)->map(function($laptop) {
-            return [
-                'id' => $laptop->id,
-                'brand' => $laptop->brand->name,
-                'model' => $laptop->model,
-                'cf_score' => round($laptop->cf_score, 4),
-                'specs' => [
-                    'cpu' => $laptop->cpu,
-                    'gpu' => $laptop->gpu,
-                    'ram' => $laptop->ram
-                ]
-            ];
-        });
-        
-        // Log informasi
-        Log::channel('recommendations')->info("Hasil rekomendasi", $logContext + [
-            'recommendation_breakdown' => [
-                'sample_scores' => $sampleScores,
-                'total_laptops' => $recommendations->count()
-            ],
-            'statistics' => [
-                'total_laptops' => $recommendations->count(),
-                'brand_distribution' => $brandDistribution,
-                'score_range' => [
-                    'min' => round($scoreStats['min'], 4),
-                    'max' => round($scoreStats['max'], 4),
-                    'avg' => round($scoreStats['avg'], 4)
-                ]
-            ]
-        ]);
+        // Method ini sudah deprecated, logging dilakukan di main method
     }
 
     /**

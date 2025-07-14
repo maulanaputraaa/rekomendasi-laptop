@@ -157,6 +157,14 @@ class SearchService
             $laptop->tfidf_score = $tfidfScores[$laptop->id] ?? 0;
             $laptop->combined_score = $filteredScores[$laptop->id] ?? 0;
             $laptop->average_rating = round($ratings[$laptop->id] ?? 0, 1);
+            
+            // Tambahkan informasi rentang harga
+            $priceRange = $laptop->price_range;
+            $laptop->price_range = [
+                'min' => $priceRange['min'],
+                'max' => $priceRange['max']
+            ];
+            
             $result->push($laptop);
         }
         

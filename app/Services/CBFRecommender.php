@@ -33,9 +33,15 @@ class CBFRecommender
      */
     public function getRecommendations($userId, $limit = null, $brandClicks = null)
     {
+        $startTime = microtime(true);
         // Setup logging
-        $logContext = ['type' => 'CBF', 'user_id' => $userId];
-        Log::channel('recommendations')->info("Memulai proses rekomendasi", $logContext);
+        $logContext = [
+            'type' => 'CBF', 
+            'user_id' => $userId,
+            'limit' => $limit,
+            'timestamp' => now()->toISOString()
+        ];
+        Log::channel('recommendations')->info("🎯 Memulai Content-Based Filtering", $logContext);
         
         // Ambil data klik brand jika tidak disediakan
         $brandClicks = $brandClicks ?? UserClick::where('user_id', $userId)
@@ -130,19 +136,25 @@ class CBFRecommender
         
         $topRecommendations = $sorted->values();
         
-        // Log hasil akhir
-        Log::channel('recommendations')->info("Hasil rekomendasi", $logContext + [
-            'total_recommended' => $topRecommendations->count(),
-            'top_3' => $topRecommendations->take(3)->map(function($laptop) {
-                return [
-                    'id' => $laptop->id,
-                    'model' => $laptop->model,
-                    'brand' => $laptop->brand->name,
-                    'score' => $laptop->cbf_score
-                ];
-            })->toArray()
-        ]);
+        $processingTime = round((microtime(true) - $startTime) * 1000, 2);
         
+        // Log hasil akhir
+        Log::channel('recommendations')->info("✅ CBF rekomendasi selesai", $logContext + [
+            'results_count' => $topRecommendations->count(),
+            'processing_time_ms' => $processingTime,
+            'user_preferences' => [
+                'favorite_brands' => collect($brandWeights)->sortByDesc(fn($weight) => $weight)->take(3)->keys()->toArray(),
+                'total_clicks' => $brandClicks->sum('click_count')
+            ],
+            'top_results' => $topRecommendations->take(3)->map(fn($laptop) => [
+                'id' => $laptop->id,
+                'name' => "{$laptop->brand->name} {$laptop->series} {$laptop->model}",
+                'cbf_score' => round($laptop->cbf_score, 3),
+                'feature_score' => round($laptop->feature_score ?? 0, 3),
+                'price' => 'Rp ' . number_format($laptop->price)
+            ])->toArray()
+        ]);
+
         return $topRecommendations;
     }
 

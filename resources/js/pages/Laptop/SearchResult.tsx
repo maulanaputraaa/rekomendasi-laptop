@@ -23,7 +23,13 @@ interface FilterState {
 }
 interface Props {
   query: string
-  results: (Laptop & { average_rating?: number })[]
+  results: (Laptop & { 
+    average_rating?: number
+    price_range?: {
+      min: number
+      max: number
+    }
+  })[]
   filters?: {
     brands?: string
     ram?: string
@@ -148,6 +154,36 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
       currency: 'IDR',
       minimumFractionDigits: 0
     }).format(price)
+  }
+
+  // Helper function untuk menampilkan informasi harga
+  const formatPriceInfo = (laptop: Laptop & { 
+    average_rating?: number
+    price_range?: {
+      min: number
+      max: number
+    }
+  }) => {
+    // Jika laptop memiliki price_range, tampilkan rentang harga
+    if (laptop.price_range && laptop.price_range.min !== laptop.price_range.max) {
+      return (
+        <div className="space-y-1">
+          <p className="text-2xl font-bold text-[var(--emerald-600)] dark:text-[var(--emerald-500)]">
+            {formatPrice(laptop.price)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Rata-rata dari {formatPrice(laptop.price_range.min)} - {formatPrice(laptop.price_range.max)}
+          </p>
+        </div>
+      )
+    }
+    
+    // Jika hanya ada satu harga
+    return (
+      <p className="text-2xl font-bold text-[var(--emerald-600)] dark:text-[var(--emerald-500)]">
+        {formatPrice(laptop.price)}
+      </p>
+    )
   }
 
   const renderStars = (rating: number) => {
@@ -477,14 +513,10 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
                         <h3 className="text-xl font-semibold text-foreground group-hover:text-[var(--blue-600)] transition-colors line-clamp-2">
                           {`${laptop.series} ${laptop.model}`}
                         </h3>
-                        <p className="text-sm text-muted-foreground line-clamp-1">CPU: {laptop.cpu}</p>
-                        <p className="text-sm text-muted-foreground line-clamp-1">RAM: {laptop.ram}</p>
                       </div>
 
                       <div className="mt-4">
-                        <p className="text-2xl font-bold text-[var(--emerald-600)] dark:text-[var(--emerald-500)]">
-                          Rp {laptop.price.toLocaleString('id-ID')}
-                        </p>
+                        {formatPriceInfo(laptop)}
                       </div>
 
                       <div className="mt-4 flex items-center justify-between">

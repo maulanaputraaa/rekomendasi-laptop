@@ -46,8 +46,23 @@ class TFIDFRecommender
      */
     public function recommend(string $query, ?array $priceRange = null): Collection
     {
+        $startTime = microtime(true);
+        $logContext = [
+            'type' => 'TF-IDF',
+            'query' => $query,
+            'price_range' => $priceRange,
+            'timestamp' => now()->toISOString()
+        ];
+        
+        Log::channel('recommendations')->info("🔍 Memulai TF-IDF recommendation", $logContext);
+        
         // Deteksi konteks query dan tentukan bobot fitur
         $contextWeights = $this->detectQueryContext($query);
+        
+        Log::channel('recommendations')->debug("📝 Context detected", $logContext + [
+            'context_weights' => $contextWeights,
+            'detected_contexts' => array_keys(array_filter($contextWeights, fn($weight) => $weight > 1))
+        ]);
         
         // Terapkan filter harga jika ada
         if ($priceRange) {
@@ -67,15 +82,45 @@ class TFIDFRecommender
         // Tokenisasi query
         $queryTerms = $this->tokenize($query);
         
+        Log::channel('recommendations')->debug("🔤 Query processed", $logContext + [
+            'query_terms' => $queryTerms,
+            'total_laptops' => $laptops->count(),
+            'total_unique_terms' => count($idf)
+        ]);
+        
         // Hitung skor untuk setiap laptop
         $scores = $this->calculateScores($laptopDocs, $queryTerms, $idf, $contextWeights);
         
         // Urutkan dan kembalikan hasil
-        return $this->getSortedResults($scores, $contextWeights)
+        $results = $this->getSortedResults($scores, $contextWeights)
             ->map(function ($laptop) use ($scores) {
                 $laptop->tfidf_score = $scores[$laptop->id] ?? 0;
                 return $laptop;
             });
+            
+        $processingTime = round((microtime(true) - $startTime) * 1000, 2);
+        
+        Log::channel('recommendations')->info("✅ TF-IDF recommendation completed", $logContext + [
+            'results_count' => $results->count(),
+            'processing_time_ms' => $processingTime,
+            'score_stats' => [
+                'max_score' => $results->max('tfidf_score'),
+                'min_score' => $results->min('tfidf_score'),
+                'avg_score' => round($results->avg('tfidf_score'), 3)
+            ],
+            'top_results' => $results->take(3)->map(fn($laptop) => [
+                'id' => $laptop->id,
+                'name' => "{$laptop->brand->name} {$laptop->series} {$laptop->model}",
+                'tfidf_score' => round($laptop->tfidf_score, 3),
+                'price' => 'Rp ' . number_format($laptop->price),
+                'specs' => [
+                    'cpu' => substr($laptop->cpu, 0, 30) . '...',
+                    'gpu' => substr($laptop->gpu, 0, 25) . '...'
+                ]
+            ])->toArray()
+        ]);
+        
+        return $results;
     }
 
     /**
