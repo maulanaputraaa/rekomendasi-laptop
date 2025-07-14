@@ -107,10 +107,10 @@ class SearchController extends Controller
             foreach ($processorList as $proc) {
                 switch (strtolower(trim($proc))) {
                     case 'intel':
-                        $searchTerms[] = 'intel i3 i5 i7 i9 core processor';
+                        $searchTerms[] = 'intel core processor cpu';
                         break;
                     case 'amd':
-                        $searchTerms[] = 'amd ryzen 3 5 7 9 processor';
+                        $searchTerms[] = 'amd ryzen processor cpu';
                         break;
                     default:
                         $searchTerms[] = $proc;
