@@ -67,9 +67,9 @@ Aplikasi web berbasis Laravel dan React untuk memberikan rekomendasi laptop yang
 
 ### **1. Hybrid Recommender System**
 Sistem utama yang menggabungkan 3 algoritma dengan bobot dinamis:
-- **TF-IDF**: 40% - Analisis teks query dan spesifikasi
-- **Content-Based Filtering**: 35% - Berdasarkan fitur laptop
-- **Collaborative Filtering**: 25% - Berdasarkan user behavior
+- **TF-IDF**: 50% - Analisis teks query dan spesifikasi
+- **Content-Based Filtering**: 30% - Berdasarkan fitur laptop
+- **Collaborative Filtering**: 20% - Berdasarkan user behavior
 
 ### **2. TF-IDF Recommender**
 - Menganalisis query pengguna dan mengekstrak fitur penting
@@ -135,9 +135,9 @@ DB_USERNAME=root
 DB_PASSWORD=
 
 # Konfigurasi Rekomendasi
-RECOMMENDER_TFIDF_WEIGHT=0.4
-RECOMMENDER_CBF_WEIGHT=0.35
-RECOMMENDER_CF_WEIGHT=0.25
+RECOMMENDER_TFIDF_WEIGHT=0.5
+RECOMMENDER_CBF_WEIGHT=0.3
+RECOMMENDER_CF_WEIGHT=0.2
 ```
 
 ## 🗄️ Konfigurasi Database

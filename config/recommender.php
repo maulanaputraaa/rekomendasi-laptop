@@ -2,8 +2,8 @@
 
 return [
     'weights' => [
-        'cf' => 0.4,
+        'tfidf' => 0.5,
         'cbf' => 0.3,
-        'tfidf' => 0.3,
+        'cf' => 0.2,
     ],
 ];

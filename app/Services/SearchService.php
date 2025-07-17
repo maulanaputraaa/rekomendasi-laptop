@@ -64,11 +64,11 @@ class SearchService
             
             if ($isSpecificQuery || $isSpecificHardware) {
                 $strategy = 'Hybrid (CBF+CF+TFIDF) [Specific]';
-                // Atur bobot berdasarkan jenis query
-                $tfidfWeight = $isSpecificHardware ? 0.7 : 0.5;
+                // Atur bobot berdasarkan jenis query dengan base weight baru
+                $tfidfWeight = $isSpecificHardware ? 0.7 : 0.6;
                 $weights = [
-                    'cbf' => 0.3 - ($tfidfWeight - 0.5) * 0.5,
-                    'cf' => 0.5 - ($tfidfWeight - 0.5) * 0.5,
+                    'cbf' => 0.3 - ($tfidfWeight - 0.5) * 0.4,
+                    'cf' => 0.2 - ($tfidfWeight - 0.5) * 0.2,
                     'tfidf' => $tfidfWeight
                 ];
                 
@@ -88,9 +88,9 @@ class SearchService
                     $tfidfScores,
                     $brandFilter,
                     [
+                        'tfidf' => 0.5,
                         'cbf' => 0.3,
-                        'cf' => 0.5,
-                        'tfidf' => 0.2
+                        'cf' => 0.2
                     ],
                     $componentScores
                 );
@@ -429,7 +429,7 @@ class SearchService
         array $cfScores,
         array $tfidfScores,
         ?string $brandFilter = null,
-        array $weights = ['cbf' => 0.3, 'cf' => 0.4, 'tfidf' => 0.3],
+        array $weights = ['tfidf' => 0.5, 'cbf' => 0.3, 'cf' => 0.2],
         array &$componentScores = []
     ): array {
         $combined = [];
