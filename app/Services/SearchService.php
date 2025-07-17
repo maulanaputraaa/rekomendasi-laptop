@@ -158,11 +158,10 @@ class SearchService
             $laptop->combined_score = $filteredScores[$laptop->id] ?? 0;
             $laptop->average_rating = round($ratings[$laptop->id] ?? 0, 1);
             
-            // Tambahkan informasi rentang harga
-            $priceRange = $laptop->price_range;
+            // Tambahkan informasi harga
             $laptop->price_range = [
-                'min' => $priceRange['min'],
-                'max' => $priceRange['max']
+                'min' => $laptop->price,
+                'max' => $laptop->price
             ];
             
             $result->push($laptop);

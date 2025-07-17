@@ -4,7 +4,6 @@ namespace App\Imports;
 
 use App\Models\Brand;
 use App\Models\Laptop;
-use App\Models\LaptopPrice;
 use App\Models\Review;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\ToCollection;
@@ -16,81 +15,126 @@ class ReviewDataImport implements ToCollection
 
     public function collection(Collection $rows)
     {
-        $rows->skip(1)->each(function ($row) {
+        // Step 1: Grup data berdasarkan spesifikasi laptop dan hitung rata-rata harga
+        $laptopGroups = [];
+        $reviews = [];
+        
+        $rows->skip(1)->each(function ($row) use (&$laptopGroups, &$reviews) {
             $this->totalData++;
-            [$tanggal, $responder, $brandName, $series, $model, $cpu, $ram, $storage, $gpu, $price, $rating, $review] = $row;
-            $responderName = trim($responder);
-            $reviewText = trim($review);
-            if (Review::where('responder_name', $responderName)
-                ->where('review', $reviewText)
-                ->exists()) {
-                $this->duplicates++;
+            
+            // Pastikan row memiliki minimal 12 kolom
+            if (count($row) < 12) {
                 return;
             }
-            $brand = Brand::firstOrCreate([
-                'name' => trim($brandName),
-            ]);
-            // Cari laptop yang sudah ada berdasarkan brand, series, model DAN spesifikasi
-            $laptop = Laptop::where([
-                'brand_id' => $brand->id,
-                'series' => trim($series),
-                'model' => trim($model),
-                'cpu' => trim($cpu),
-                'ram' => (int) $ram,
-                'storage' => (int) $storage,
-                'gpu' => trim($gpu),
-            ])->first();
-
-            $currentPrice = (int) str_replace('.', '', $price);
             
-            if ($laptop) {
-                // Laptop dengan spesifikasi yang sama ditemukan
-                // Hanya perlu menambahkan harga baru jika berbeda
-                
-                // Simpan harga baru ke tabel laptop_prices jika belum ada
-                $existingPrice = LaptopPrice::where([
-                    'laptop_id' => $laptop->id,
-                    'price' => $currentPrice,
-                    'source' => 'import'
-                ])->exists();
-
-                if (!$existingPrice) {
-                    LaptopPrice::create([
-                        'laptop_id' => $laptop->id,
-                        'price' => $currentPrice,
-                        'source' => 'import'
-                    ]);
-
-                    // Update harga rata-rata di tabel laptops
-                    $averagePrice = $laptop->laptopPrices()->avg('price');
-                    $laptop->update(['price' => round($averagePrice, 2)]);
-                }
-            } else {
-                // Laptop dengan spesifikasi unik, buat entry baru
-                $laptop = Laptop::create([
-                    'brand_id' => $brand->id,
+            [$tanggal, $responder, $brandName, $series, $model, $cpu, $ram, $storage, $gpu, $price, $rating, $review] = $row;
+            
+            // Validasi kolom penting tidak kosong
+            if (empty($brandName) || empty($series) || empty($model) || empty($cpu) || 
+                empty($ram) || empty($storage) || empty($gpu) || empty($price)) {
+                return;
+            }
+            
+            $responderName = trim($responder);
+            $reviewText = trim($review);
+            
+            // Buat key unik berdasarkan spesifikasi lengkap
+            $laptopKey = trim($brandName) . '|' . trim($series) . '|' . trim($model) . '|' . 
+                        trim($cpu) . '|' . (int)$ram . '|' . (int)$storage . '|' . trim($gpu);
+            
+            $currentPrice = (int) str_replace(['.', ','], '', $price);
+            
+            // Validasi harga harus lebih dari 0
+            if ($currentPrice <= 0) {
+                return;
+            }
+            
+            // Grup laptop berdasarkan spesifikasi (SELALU DIPROSES untuk harga)
+            if (!isset($laptopGroups[$laptopKey])) {
+                $laptopGroups[$laptopKey] = [
+                    'brandName' => trim($brandName),
                     'series' => trim($series),
                     'model' => trim($model),
                     'cpu' => trim($cpu),
                     'ram' => (int) $ram,
                     'storage' => (int) $storage,
                     'gpu' => trim($gpu),
-                    'price' => $currentPrice,
-                ]);
-
-                // Simpan harga pertama ke tabel laptop_prices
-                LaptopPrice::create([
-                    'laptop_id' => $laptop->id,
-                    'price' => $currentPrice,
-                    'source' => 'import'
+                    'prices' => []
+                ];
+            }
+            
+            // Tambahkan harga ke grup (jika belum ada harga yang sama)
+            if (!in_array($currentPrice, $laptopGroups[$laptopKey]['prices'])) {
+                $laptopGroups[$laptopKey]['prices'][] = $currentPrice;
+            }
+            
+            // Cek duplicate review HANYA untuk review, bukan untuk laptop
+            $isDuplicateReview = Review::where('responder_name', $responderName)
+                ->where('review', $reviewText)
+                ->exists();
+            
+            if ($isDuplicateReview) {
+                $this->duplicates++;
+                // Review duplikat di-skip, tapi laptop tetap diproses
+            } else {
+                // Simpan review hanya jika tidak duplikat
+                $reviews[] = [
+                    'laptopKey' => $laptopKey,
+                    'responder_name' => $responderName,
+                    'rating' => (int) $rating,
+                    'review' => $reviewText
+                ];
+            }
+        });
+        
+        // Step 2: Proses setiap grup laptop dengan harga rata-rata
+        foreach ($laptopGroups as $laptopKey => $laptopData) {
+            $brand = Brand::firstOrCreate([
+                'name' => $laptopData['brandName'],
+            ]);
+            
+            // Cari laptop yang sudah ada berdasarkan spesifikasi lengkap
+            $laptop = Laptop::where([
+                'brand_id' => $brand->id,
+                'series' => $laptopData['series'],
+                'model' => $laptopData['model'],
+                'cpu' => $laptopData['cpu'],
+                'ram' => $laptopData['ram'],
+                'storage' => $laptopData['storage'],
+                'gpu' => $laptopData['gpu'],
+            ])->first();
+            
+            // Hitung rata-rata harga dari file import ini
+            $averagePrice = array_sum($laptopData['prices']) / count($laptopData['prices']);
+            
+            if ($laptop) {
+                // Laptop sudah ada - OVERRIDE dengan harga rata-rata dari import ini
+                $laptop->update(['price' => round($averagePrice)]);
+            } else {
+                // Laptop baru - buat dengan harga rata-rata
+                $laptop = Laptop::create([
+                    'brand_id' => $brand->id,
+                    'series' => $laptopData['series'],
+                    'model' => $laptopData['model'],
+                    'cpu' => $laptopData['cpu'],
+                    'ram' => $laptopData['ram'],
+                    'storage' => $laptopData['storage'],
+                    'gpu' => $laptopData['gpu'],
+                    'price' => round($averagePrice),
                 ]);
             }
-            Review::create([
-                'laptop_id' => $laptop->id,
-                'responder_name' => $responderName,
-                'rating' => (int) $rating,
-                'review' => $reviewText,
-            ]);
-        });
+            
+            // Simpan semua review untuk laptop ini
+            foreach ($reviews as $reviewData) {
+                if ($reviewData['laptopKey'] === $laptopKey) {
+                    Review::create([
+                        'laptop_id' => $laptop->id,
+                        'responder_name' => $reviewData['responder_name'],
+                        'rating' => $reviewData['rating'],
+                        'review' => $reviewData['review'],
+                    ]);
+                }
+            }
+        }
     }
 }
