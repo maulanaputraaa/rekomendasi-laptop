@@ -405,11 +405,10 @@ export default function UserList({ users }: Props) {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <Badge
-                                  className={`px-2 py-1 ${
-                                    user.role === "admin"
+                                  className={`px-2 py-1 ${user.role === "admin"
                                       ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100"
                                       : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                                  }`}
+                                    }`}
                                 >
                                   {user.role === "admin" ? (
                                     <Shield className="w-3 h-3 mr-1 inline" />

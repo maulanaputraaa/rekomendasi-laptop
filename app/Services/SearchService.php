@@ -37,7 +37,7 @@ class SearchService
     {
         // Normalisasi query: ubah koma menjadi spasi
         $query = $this->normalizeQuery($query);
-        
+
         $priceRange = $this->extractPriceRange($query);
         $cleanQuery = $this->removePriceTerms($query);
         $userId = Auth::id() ?? 1;
@@ -45,23 +45,23 @@ class SearchService
         $cleanQuery = $this->removeBrandTerms($cleanQuery);
         $isSpecificQuery = $this->isSpecificQuery($query);
         $isSpecificHardware = $this->isSpecificHardwareQuery($cleanQuery);
-        
+
         // Dapatkan rekomendasi dari TF-IDF
         $tfidfResults = $this->tfidf->recommend(
             query: $cleanQuery,
             priceRange: $priceRange
         );
-        
+
         $tfidfScores = $this->assignTFIDFScores($tfidfResults);
         $strategy = 'TF-IDF only';
         $combinedScores = $tfidfScores;
         $componentScores = [];
-        
+
         // Gunakan hybrid recommendation jika user memiliki riwayat klik
         if ($this->userHasClickData($userId)) {
             $cbfScores = $this->getCBFScores($userId);
             $cfScores = $this->getCFScores($userId);
-            
+
             if ($isSpecificQuery || $isSpecificHardware) {
                 $strategy = 'Hybrid (CBF+CF+TFIDF) [Specific]';
                 // Atur bobot berdasarkan jenis query dengan base weight baru
@@ -71,7 +71,7 @@ class SearchService
                     'cf' => 0.2 - ($tfidfWeight - 0.5) * 0.2,
                     'tfidf' => $tfidfWeight
                 ];
-                
+
                 $combinedScores = $this->combineThreeScores(
                     $cbfScores,
                     $cfScores,
@@ -95,13 +95,13 @@ class SearchService
                     $componentScores
                 );
             }
-            
+
             // Fallback jika CF tidak memiliki cukup data
             if (empty(array_filter($cfScores)) || count($cfScores) < 5) {
                 $strategy = 'CBF + TF-IDF';
                 $tfidfWeight = ($isSpecificQuery || $isSpecificHardware) ? 0.7 : 0.6;
                 $combinedScores = $this->combineScoresWithQueryPriority(
-                    $cbfScores, 
+                    $cbfScores,
                     $tfidfScores,
                     $brandFilter,
                     $tfidfWeight,
@@ -109,17 +109,17 @@ class SearchService
                 );
             }
         }
-        
+
         // Terapkan filter brand jika ada
         if ($brandFilter) {
             $combinedScores = $this->applyBrandFilter($combinedScores, $brandFilter);
         }
-        
+
         // Filter skor rendah dan ambil top 20
         $filteredScores = $this->filterLowScores($combinedScores);
         arsort($filteredScores);
         $topIds = array_keys(array_slice($filteredScores, 0, 20, true));
-        
+
         // Handle jika tidak ada rekomendasi
         if (empty($topIds)) {
             Log::channel('recommendations')->warning('No recommendations found', [
@@ -131,42 +131,42 @@ class SearchService
             ]);
             return collect();
         }
-        
+
         // Dapatkan data laptop lengkap
         $laptops = Laptop::with('brand')
             ->whereIn('id', $topIds)
             ->get()
             ->keyBy('id');
-        
+
         $orderedLaptops = collect();
         foreach ($topIds as $id) {
             if ($laptops->has($id)) {
                 $orderedLaptops->push($laptops[$id]);
             }
         }
-        
+
         // Hitung rating rata-rata
         $ratings = Review::whereIn('laptop_id', $topIds)
             ->selectRaw('laptop_id, AVG(rating) as avg_rating')
             ->groupBy('laptop_id')
             ->pluck('avg_rating', 'laptop_id');
-        
+
         // Format hasil akhir
         $result = collect();
         foreach ($orderedLaptops as $laptop) {
             $laptop->tfidf_score = $tfidfScores[$laptop->id] ?? 0;
             $laptop->combined_score = $filteredScores[$laptop->id] ?? 0;
             $laptop->average_rating = round($ratings[$laptop->id] ?? 0, 1);
-            
+
             // Tambahkan informasi harga
             $laptop->price_range = [
                 'min' => $laptop->price,
                 'max' => $laptop->price
             ];
-            
+
             $result->push($laptop);
         }
-        
+
         // Log hasil pencarian
         Log::channel('recommendations')->info('Search results', [
             'query' => $query,
@@ -179,12 +179,12 @@ class SearchService
             'filtered_scores' => array_intersect_key($filteredScores, array_flip($topIds)),
             'original_scores' => array_intersect_key($combinedScores, array_flip($topIds))
         ]);
-        
+
         // Log skor komponen untuk analisis
         if ($strategy === 'CBF + TF-IDF' || str_contains($strategy, 'Hybrid')) {
             $this->logComponentScores($topIds, $componentScores, $strategy);
         }
-        
+
         return $result;
     }
 
@@ -266,7 +266,7 @@ class SearchService
         if (preg_match('/harga:(\d+)-(\d+)/', $query, $matches)) {
             return [(int)$matches[1], (int)$matches[2]];
         }
-        
+
         // Format lama: "5 juta", "4-6 juta", dll
         if (preg_match('/(\d+)\s*(juta|jt|jutaan)/i', $query, $matches)) {
             $value = (int)$matches[1] * 1000000;
@@ -475,7 +475,7 @@ class SearchService
      * @return array Skor gabungan
      */
     private function combineScoresWithQueryPriority(
-        array $personalScores, 
+        array $personalScores,
         array $tfidfScores,
         ?string $brandFilter = null,
         float $tfidfWeight = 0.6,
@@ -553,7 +553,7 @@ class SearchService
         Log::channel('recommendations')->info("Component scores for strategy: $strategy", [
             'top_ids' => $topIds,
             'component_scores' => $filteredScores,
-            'score_details' => array_map(function($id) use ($componentScores) {
+            'score_details' => array_map(function ($id) use ($componentScores) {
                 return $componentScores[$id] ?? 'Score not calculated';
             }, $topIds)
         ]);

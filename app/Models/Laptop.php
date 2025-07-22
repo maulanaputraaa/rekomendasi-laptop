@@ -10,7 +10,14 @@ class Laptop extends Model
     use HasFactory;
 
     protected $fillable = [
-        'brand_id', 'series', 'model', 'cpu', 'ram', 'storage', 'gpu', 'price'
+        'brand_id',
+        'series',
+        'model',
+        'cpu',
+        'ram',
+        'storage',
+        'gpu',
+        'price'
     ];
 
     public function brand()

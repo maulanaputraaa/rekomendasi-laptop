@@ -393,7 +393,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 **Developer**: Maulana Putra
 - **GitHub**: [@maulanaputraaa](https://github.com/maulanaputraaa)
-- **Email**: maulanaputra@example.com
+- **Email**: maulanaputra2003@gmail.com
 
 **Project Link**: [https://github.com/maulanaputraaa/rekomendasi-laptop](https://github.com/maulanaputraaa/rekomendasi-laptop)
 

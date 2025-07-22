@@ -18,8 +18,8 @@ class UserClickController extends Controller
         $laptop = Laptop::findOrFail($laptopId);
         $brandId = $laptop->brand_id;
         $click = UserClick::where('user_id', $user->id)
-                        ->where('brand_id', $brandId)
-                        ->first();
+            ->where('brand_id', $brandId)
+            ->first();
         if ($click) {
             $click->increment('click_count');
         } else {

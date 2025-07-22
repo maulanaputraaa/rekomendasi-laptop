@@ -31,10 +31,10 @@ class SearchController extends Controller
 
         // Gabungkan query dengan filter untuk membuat query pencarian yang lengkap
         $searchQuery = $this->buildSearchQuery($query, $brands, $ram, $usage, $processor, $priceMin, $priceMax);
-        
+
         $results = $this->searchService->searchWithTFIDF($searchQuery);
         $sortedResults = $results->sortBy('harga');
-        
+
         return inertia('Laptop/SearchResult', [
             'query' => $query,
             'results' => $sortedResults,
@@ -55,23 +55,23 @@ class SearchController extends Controller
     private function buildSearchQuery($query, $brands, $ram, $usage, $processor, $priceMin, $priceMax)
     {
         $searchTerms = [];
-        
+
         // Tambahkan query teks jika ada
         if (trim($query)) {
             $searchTerms[] = trim($query);
         }
-        
+
         // Tambahkan filter sebagai bagian dari query
         if ($brands) {
             $brandList = explode(',', $brands);
             $searchTerms = array_merge($searchTerms, $brandList);
         }
-        
+
         if ($ram) {
             $ramList = explode(',', $ram);
             $searchTerms = array_merge($searchTerms, $ramList);
         }
-        
+
         if ($usage) {
             $usageList = explode(',', $usage);
             // Konversi kebutuhan ke kata kunci yang relevan
@@ -101,7 +101,7 @@ class SearchController extends Controller
                 }
             }
         }
-        
+
         if ($processor) {
             $processorList = explode(',', $processor);
             foreach ($processorList as $proc) {
@@ -117,12 +117,12 @@ class SearchController extends Controller
                 }
             }
         }
-        
+
         // Tambahkan rentang harga sebagai bagian dari query
         if ($priceMin > 0 || $priceMax < 50000000) {
             $searchTerms[] = "harga:{$priceMin}-{$priceMax}";
         }
-        
+
         // Gabungkan semua term menjadi satu query
         return implode(' ', $searchTerms);
     }

@@ -23,7 +23,7 @@ interface FilterState {
 }
 interface Props {
   query: string
-  results: (Laptop & { 
+  results: (Laptop & {
     average_rating?: number
     price_range?: {
       min: number
@@ -63,7 +63,7 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
 
   useEffect(() => {
     setQuery(initialQuery)
-    
+
     // Set filter dari props jika ada
     if (filters) {
       setCurrentFilters({
@@ -80,12 +80,12 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
   }, [initialQuery, filters])
 
   const hasActiveFilters = () => {
-    return currentFilters.brands.length > 0 || 
-           currentFilters.ram.length > 0 || 
-           currentFilters.usage.length > 0 || 
-           currentFilters.processor.length > 0 ||
-           currentFilters.priceRange.min > 0 || 
-           currentFilters.priceRange.max < 50000000
+    return currentFilters.brands.length > 0 ||
+      currentFilters.ram.length > 0 ||
+      currentFilters.usage.length > 0 ||
+      currentFilters.processor.length > 0 ||
+      currentFilters.priceRange.min > 0 ||
+      currentFilters.priceRange.max < 50000000
   }
 
   const handleFilterChange = (category: keyof FilterState, value: string | { min: number; max: number }) => {
@@ -97,7 +97,7 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
     } else {
       setCurrentFilters(prev => ({
         ...prev,
-        [category]: Array.isArray(prev[category]) 
+        [category]: Array.isArray(prev[category])
           ? (prev[category] as string[]).includes(value as string)
             ? (prev[category] as string[]).filter(item => item !== value)
             : [...(prev[category] as string[]), value as string]
@@ -122,11 +122,11 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
   const handleNewSearch = () => {
     if (query.trim() || hasActiveFilters()) {
       const searchParams = new URLSearchParams()
-      
+
       if (query.trim()) {
         searchParams.append('query', query)
       }
-      
+
       if (currentFilters.brands.length > 0) {
         searchParams.append('brands', currentFilters.brands.join(','))
       }
@@ -143,7 +143,7 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
         searchParams.append('price_min', currentFilters.priceRange.min.toString())
         searchParams.append('price_max', currentFilters.priceRange.max.toString())
       }
-      
+
       router.visit(`/search?${searchParams.toString()}`)
     }
   }
@@ -157,7 +157,7 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
   }
 
   // Helper function untuk menampilkan informasi harga
-  const formatPriceInfo = (laptop: Laptop & { 
+  const formatPriceInfo = (laptop: Laptop & {
     average_rating?: number
     price_range?: {
       min: number
@@ -177,7 +177,7 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
         </div>
       )
     }
-    
+
     // Jika hanya ada satu harga
     return (
       <p className="text-2xl font-bold text-[var(--emerald-600)] dark:text-[var(--emerald-500)]">
@@ -462,8 +462,8 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {currentFilters.priceRange.min === 0 && currentFilters.priceRange.max === 50000000 
-                          ? "Semua harga" 
+                        {currentFilters.priceRange.min === 0 && currentFilters.priceRange.max === 50000000
+                          ? "Semua harga"
                           : `${formatPrice(currentFilters.priceRange.min)} - ${formatPrice(currentFilters.priceRange.max)}`
                         }
                       </div>
@@ -493,88 +493,88 @@ export default function SearchResult({ query: initialQuery, results, filters }: 
                     animate="visible"
                     className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
                   >
-                {results.map((laptop) => (
-                  <motion.div
-                    key={laptop.id}
-                    variants={itemVariants}
-                    whileHover={{ y: -8, transition: { duration: 0.3 } }}
-                    className="group relative bg-card rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 border border-border overflow-hidden"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-br from-[var(--blue-500)/5] to-[var(--violet-500)/5] opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    {results.map((laptop) => (
+                      <motion.div
+                        key={laptop.id}
+                        variants={itemVariants}
+                        whileHover={{ y: -8, transition: { duration: 0.3 } }}
+                        className="group relative bg-card rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 border border-border overflow-hidden"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-[var(--blue-500)/5] to-[var(--violet-500)/5] opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
 
-                    <div className="p-6 relative z-10">
-                      <div className="flex items-center justify-between mb-4">
-                        <span className="inline-block bg-[var(--blue-500)/10] text-[var(--blue-600)] dark:bg-[var(--blue-500)/20] dark:text-[var(--blue-400)] text-sm px-3 py-1 rounded-full font-medium">
-                          {laptop.brand?.name || 'Unknown'}
-                        </span>
-                      </div>
+                        <div className="p-6 relative z-10">
+                          <div className="flex items-center justify-between mb-4">
+                            <span className="inline-block bg-[var(--blue-500)/10] text-[var(--blue-600)] dark:bg-[var(--blue-500)/20] dark:text-[var(--blue-400)] text-sm px-3 py-1 rounded-full font-medium">
+                              {laptop.brand?.name || 'Unknown'}
+                            </span>
+                          </div>
 
-                      <div className="space-y-2">
-                        <h3 className="text-xl font-semibold text-foreground group-hover:text-[var(--blue-600)] transition-colors line-clamp-2">
-                          {`${laptop.series} ${laptop.model}`}
-                        </h3>
-                      </div>
+                          <div className="space-y-2">
+                            <h3 className="text-xl font-semibold text-foreground group-hover:text-[var(--blue-600)] transition-colors line-clamp-2">
+                              {`${laptop.series} ${laptop.model}`}
+                            </h3>
+                          </div>
 
-                      <div className="mt-4">
-                        {formatPriceInfo(laptop)}
-                      </div>
+                          <div className="mt-4">
+                            {formatPriceInfo(laptop)}
+                          </div>
 
-                      <div className="mt-4 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {typeof laptop.average_rating === "number" ? (
-                            renderStars(laptop.average_rating)
-                          ) : (
-                            <span className="text-sm text-muted-foreground">{laptop.average_rating || 'Belum ada rating'}</span>
-                          )}
+                          <div className="mt-4 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {typeof laptop.average_rating === "number" ? (
+                                renderStars(laptop.average_rating)
+                              ) : (
+                                <span className="text-sm text-muted-foreground">{laptop.average_rating || 'Belum ada rating'}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="mt-6">
+                            <Button
+                              className="w-full bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground hover:shadow-lg group"
+                              onClick={() => router.visit(`/laptops/${laptop.id}`)}
+                            >
+                              Lihat Detail
+                              <ChevronRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                            </Button>
+                          </motion.div>
                         </div>
-                      </div>
+                      </motion.div>
+                    ))}
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.3 }}
+                    className="text-center py-12"
+                  >
+                    <div className="max-w-md mx-auto">
+                      <motion.div
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ duration: 0.5, delay: 0.5 }}
+                        className="mb-6 text-muted-foreground"
+                      >
+                        <div className="w-20 h-20 mx-auto bg-[var(--blue-500)/10] rounded-full flex items-center justify-center">
+                          <Search className="w-10 h-10 text-[var(--blue-600)]" />
+                        </div>
+                      </motion.div>
+                      <h2 className="text-xl font-medium text-foreground">Tidak ada hasil ditemukan</h2>
+                      <p className="mt-2 text-muted-foreground">Coba kata kunci lain atau periksa ejaan pencarian Anda</p>
 
-                      <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="mt-6">
+                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mt-8">
                         <Button
-                          className="w-full bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground hover:shadow-lg group"
-                          onClick={() => router.visit(`/laptops/${laptop.id}`)}
+                          onClick={() => router.visit("/dashboard")}
+                          className="bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground whitespace-nowrap"
                         >
-                          Lihat Detail
-                          <ChevronRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                          Kembali ke Dashboard
                         </Button>
                       </motion.div>
                     </div>
                   </motion.div>
-                ))}
-              </motion.div>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.3 }}
-                className="text-center py-12"
-              >
-                <div className="max-w-md mx-auto">
-                  <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ duration: 0.5, delay: 0.5 }}
-                    className="mb-6 text-muted-foreground"
-                  >
-                    <div className="w-20 h-20 mx-auto bg-[var(--blue-500)/10] rounded-full flex items-center justify-center">
-                      <Search className="w-10 h-10 text-[var(--blue-600)]" />
-                    </div>
-                  </motion.div>
-                  <h2 className="text-xl font-medium text-foreground">Tidak ada hasil ditemukan</h2>
-                  <p className="mt-2 text-muted-foreground">Coba kata kunci lain atau periksa ejaan pencarian Anda</p>
-
-                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mt-8">
-                    <Button
-                      onClick={() => router.visit("/dashboard")}
-                      className="bg-gradient-to-r from-[var(--blue-600)] to-[var(--violet-600)] text-primary-foreground whitespace-nowrap"
-                    >
-                      Kembali ke Dashboard
-                    </Button>
-                  </motion.div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </div>

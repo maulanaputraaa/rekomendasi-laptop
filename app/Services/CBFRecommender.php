@@ -36,25 +36,25 @@ class CBFRecommender
         $startTime = microtime(true);
         // Setup logging
         $logContext = [
-            'type' => 'CBF', 
+            'type' => 'CBF',
             'user_id' => $userId,
             'limit' => $limit,
             'timestamp' => now()->toISOString()
         ];
         Log::channel('recommendations')->info("🎯 Memulai Content-Based Filtering", $logContext);
-        
+
         // Ambil data klik brand jika tidak disediakan
         $brandClicks = $brandClicks ?? UserClick::where('user_id', $userId)
             ->select('brand_id', 'click_count')
             ->orderByDesc('click_count')
             ->get();
-        
+
         // Log data klik
         Log::channel('recommendations')->debug("Data klik user", $logContext + [
             'clicks' => $brandClicks->toArray(),
             'total_clicks' => $brandClicks->sum('click_count')
         ]);
-        
+
         // Fallback jika tidak ada data klik
         if ($brandClicks->isEmpty()) {
             Log::channel('recommendations')->warning("Menggunakan fallback rekomendasi", $logContext);
@@ -63,56 +63,56 @@ class CBFRecommender
                 ->orderByDesc('reviews_avg_rating')
                 ->take($limit)
                 ->get();
-            
+
             Log::channel('recommendations')->info("Hasil fallback", $logContext + [
                 'recommended_ids' => $fallback->pluck('id')->toArray()
             ]);
             return $fallback;
         }
-        
+
         // Hitung bobot brand berdasarkan klik
         $maxClicks = $brandClicks->first()->click_count;
         $brandWeights = $brandClicks->mapWithKeys(function ($item) use ($maxClicks) {
             $normalized = $item->click_count / $maxClicks;
             return [$item->brand_id => round($normalized, 2)];
         });
-        
+
         Log::channel('recommendations')->debug("Bobot brand", $logContext + [
             'max_clicks' => $maxClicks,
             'brand_weights' => $brandWeights->toArray()
         ]);
-        
+
         // Tentukan preferensi fitur pengguna
         $featurePreferences = $this->getUserFeaturePreferences($brandClicks);
-        
+
         // Ambil semua laptop dengan rating
         $laptops = Laptop::with('brand')
             ->withAvg('reviews', 'rating')
             ->get();
-        
+
         // Hitung skor CBF untuk setiap laptop
         $scored = $laptops->map(function ($laptop) use ($brandWeights, $featurePreferences) {
             $brandWeight = $brandWeights[$laptop->brand_id] ?? 0;
             $rating = $laptop->reviews_avg_rating ?? 0;
             $featureScore = $this->calculateFeatureScore($laptop, $featurePreferences);
-            
+
             // Formula skor CBF:
             // 40% bobot brand + 20% rating + 40% kecocokan fitur
             $cbfScore = round(
-                ($brandWeight * 0.4) + 
-                ($rating / 5 * 0.2) + 
-                ($featureScore * 0.4), 
+                ($brandWeight * 0.4) +
+                    ($rating / 5 * 0.2) +
+                    ($featureScore * 0.4),
                 4
             );
-            
+
             $laptop->cbf_score = $cbfScore;
             $laptop->feature_score = $featureScore; // Untuk logging
             return $laptop;
         });
-        
+
         // Log contoh skor
         Log::channel('recommendations')->debug("Detail scoring", $logContext + [
-            'sample_scores' => $scored->take(3)->map(function($laptop) use ($brandWeights) {
+            'sample_scores' => $scored->take(3)->map(function ($laptop) use ($brandWeights) {
                 $brandWeight = $brandWeights[$laptop->brand_id] ?? 0;
                 $rating = $laptop->reviews_avg_rating ?? 0;
                 return [
@@ -125,19 +125,19 @@ class CBFRecommender
                 ];
             })->toArray()
         ]);
-        
+
         // Urutkan berdasarkan skor tertinggi
         $sorted = $scored->sortByDesc('cbf_score');
-        
+
         // Batasi jumlah hasil jika diperlukan
         if ($limit) {
             $sorted = $sorted->take($limit);
         }
-        
+
         $topRecommendations = $sorted->values();
-        
+
         $processingTime = round((microtime(true) - $startTime) * 1000, 2);
-        
+
         // Log hasil akhir
         Log::channel('recommendations')->info("✅ CBF rekomendasi selesai", $logContext + [
             'results_count' => $topRecommendations->count(),
@@ -176,13 +176,13 @@ class CBFRecommender
             'gpu' => [],
             'ram' => []
         ];
-        
+
         $totalClicks = $brandClicks->sum('click_count');
-        
+
         // Akumulasi preferensi dari semua brand yang diklik
         foreach ($brandClicks as $click) {
             $brandFeatures = $this->getBrandFeatureProfile($click->brand_id);
-            
+
             foreach ($brandFeatures as $feature => $value) {
                 if (!isset($preferences[$feature][$value])) {
                     $preferences[$feature][$value] = 0;
@@ -191,14 +191,14 @@ class CBFRecommender
                 $preferences[$feature][$value] += $click->click_count / $totalClicks;
             }
         }
-        
+
         // Ambil nilai preferensi yang paling dominan
         $finalPreferences = [];
         foreach ($preferences as $feature => $values) {
             arsort($values);
             $finalPreferences[$feature] = array_key_first($values);
         }
-        
+
         return $finalPreferences;
     }
 
@@ -217,10 +217,10 @@ class CBFRecommender
     {
         // ID brand gaming: ASUS ROG, MSI, dll
         $gamingBrands = [3, 5, 7];
-        
+
         // ID brand office: Lenovo ThinkPad, Dell Latitude, dll
         $officeBrands = [2, 4, 6];
-        
+
         if (in_array($brandId, $gamingBrands)) {
             return [
                 'cpu' => 'high_end',
@@ -257,32 +257,32 @@ class CBFRecommender
     private function calculateFeatureScore(Laptop $laptop, array $preferences): float
     {
         $score = 0;
-        
+
         // Klasifikasi fitur laptop
         $cpuType = $this->classifyCPU($laptop->cpu);
         $gpuType = $this->classifyGPU($laptop->gpu);
         $ramSize = $this->extractRAM($laptop->ram);
-        
+
         // Penilaian CPU (40%)
         if ($cpuType === $preferences['cpu']) {
             $score += 0.4; // Kecocokan sempurna
         } elseif ($this->isCompatibleCPU($cpuType, $preferences['cpu'])) {
             $score += 0.2; // Kompatibel (lebih tinggi)
         }
-        
+
         // Penilaian GPU (40%)
         if ($gpuType === $preferences['gpu']) {
             $score += 0.4; // Kecocokan sempurna
         } elseif ($this->isCompatibleGPU($gpuType, $preferences['gpu'])) {
             $score += 0.2; // Kompatibel (dedicated → integrated)
         }
-        
+
         // Penilaian RAM (20%)
         $preferredRAM = $preferences['ram'] === 'large' ? 16 : 8;
         if ($ramSize >= $preferredRAM) {
             $score += 0.2; // Memenuhi atau melebihi preferensi
         }
-        
+
         return min($score, 1.0); // Batasi maksimal 1.0
     }
 
@@ -301,7 +301,7 @@ class CBFRecommender
     private function classifyCPU(string $cpu): string
     {
         $cpu = strtolower($cpu);
-        
+
         if (str_contains($cpu, 'i9') || str_contains($cpu, 'ryzen 9') || str_contains($cpu, 'ryzen 7')) {
             return 'high_end';
         } elseif (str_contains($cpu, 'i7') || str_contains($cpu, 'ryzen 5')) {
@@ -322,10 +322,12 @@ class CBFRecommender
     private function classifyGPU(string $gpu): string
     {
         $gpu = strtolower($gpu);
-        
-        if (str_contains($gpu, 'rtx') || 
-            str_contains($gpu, 'gtx') || 
-            str_contains($gpu, 'radeon rx')) {
+
+        if (
+            str_contains($gpu, 'rtx') ||
+            str_contains($gpu, 'gtx') ||
+            str_contains($gpu, 'radeon rx')
+        ) {
             return 'dedicated';
         } else {
             return 'integrated';
@@ -365,7 +367,7 @@ class CBFRecommender
             'balanced' => ['entry_level'],
             'entry_level' => []
         ];
-        
+
         // Periksa apakah preferensi ada di level yang lebih rendah
         return in_array($preferredCPU, $hierarchy[$laptopCPU] ?? []);
     }

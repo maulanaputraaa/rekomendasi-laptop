@@ -21,4 +21,3 @@ class Brand extends Model
         return $this->hasMany(UserClick::class);
     }
 }
-

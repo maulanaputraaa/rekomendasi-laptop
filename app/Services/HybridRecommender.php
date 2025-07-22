@@ -22,10 +22,10 @@ class HybridRecommender
 {
     /** @var CBFRecommender Layanan rekomendasi berbasis konten */
     protected $cbf;
-    
+
     /** @var CFRecommender Layanan rekomendasi kolaboratif */
     protected $cf;
-    
+
     /** @var TFIDFRecommender Layanan rekomendasi berbasis pencarian */
     protected $tfidf;
 
@@ -37,7 +37,7 @@ class HybridRecommender
      * @param TFIDFRecommender $tfidf Instance TFIDFRecommender
      */
     public function __construct(
-        CBFRecommender $cbf, 
+        CBFRecommender $cbf,
         CFRecommender $cf,
         TFIDFRecommender $tfidf
     ) {
@@ -69,15 +69,15 @@ class HybridRecommender
             'limit' => $limit,
             'timestamp' => now()->toISOString()
         ];
-        
+
         Log::channel('recommendations')->info("🚀 Memulai proses rekomendasi hybrid", $logContext);
-        
+
         // Prioritas 1: Jika ada query pencarian, gunakan TF-IDF
         if (!empty($query)) {
             Log::channel('recommendations')->info("🔍 Menggunakan strategi TF-IDF untuk pencarian", $logContext);
-            
+
             $results = $this->tfidf->recommend($query)->take($limit);
-            
+
             $processingTime = round((microtime(true) - $startTime) * 1000, 2);
             Log::channel('recommendations')->info("✅ Rekomendasi TF-IDF selesai", $logContext + [
                 'strategy' => 'TF-IDF',
@@ -89,25 +89,25 @@ class HybridRecommender
                     'score' => $laptop->tfidf_score ?? 'N/A'
                 ])->toArray()
             ]);
-            
+
             return $results;
         }
-        
+
         Log::channel('recommendations')->info("🔄 Menggunakan strategi CBF + CF hybrid", $logContext);
-        
+
         // Prioritas 2: Gabungkan CBF dan CF
         $cbfStart = microtime(true);
         $cbfRecs = $this->cbf->getRecommendations($userId, $limit);
         $cbfTime = round((microtime(true) - $cbfStart) * 1000, 2);
-        
+
         $cfStart = microtime(true);
         $cfRecs = $this->cf->getRecommendations($userId, $limit);
         $cfTime = round((microtime(true) - $cfStart) * 1000, 2);
-        
+
         // Atur bobot dinamis berdasarkan ketersediaan data
         $cbfWeight = $cbfRecs->isNotEmpty() ? 0.7 : 0;
         $cfWeight = $cfRecs->isNotEmpty() ? 0.3 : 0;
-        
+
         Log::channel('recommendations')->debug("📊 Status strategi individual", $logContext + [
             'cbf_results' => $cbfRecs->count(),
             'cf_results' => $cfRecs->count(),
@@ -116,7 +116,7 @@ class HybridRecommender
             'cbf_time_ms' => $cbfTime,
             'cf_time_ms' => $cfTime
         ]);
-        
+
         // Jika kedua metode tidak tersedia, kembalikan koleksi kosong
         if ($cbfWeight == 0 && $cfWeight == 0) {
             Log::channel('recommendations')->warning("⚠️ Tidak ada rekomendasi tersedia", $logContext + [
@@ -124,13 +124,13 @@ class HybridRecommender
             ]);
             return collect();
         }
-        
+
         // Gabungkan dan kembalikan hasil
         $combinedResults = $this->combineRecommendations($cbfRecs, $cfRecs, $cbfWeight, $cfWeight)
             ->take($limit);
-            
+
         $processingTime = round((microtime(true) - $startTime) * 1000, 2);
-        
+
         Log::channel('recommendations')->info("✅ Rekomendasi hybrid selesai", $logContext + [
             'strategy' => 'CBF+CF',
             'results_count' => $combinedResults->count(),
@@ -148,7 +148,7 @@ class HybridRecommender
                 'price' => 'Rp ' . number_format($laptop->price)
             ])->toArray()
         ]);
-        
+
         return $combinedResults;
     }
 
@@ -167,14 +167,14 @@ class HybridRecommender
      * @return Collection Koleksi laptop yang sudah digabungkan dan diurutkan
      */
     private function combineRecommendations(
-        Collection $cbfRecs, 
+        Collection $cbfRecs,
         Collection $cfRecs,
-        float $cbfWeight, 
+        float $cbfWeight,
         float $cfWeight
     ): Collection {
         // Koleksi untuk menyimpan hasil gabungan
         $combined = collect();
-        
+
         // Proses rekomendasi CBF
         foreach ($cbfRecs as $laptop) {
             $score = ($laptop->cbf_score ?? $laptop->predicted_score ?? 0) * $cbfWeight;
@@ -184,12 +184,12 @@ class HybridRecommender
                 'sources' => ['cbf']
             ]);
         }
-        
+
         // Proses rekomendasi CF
         foreach ($cfRecs as $laptop) {
             $currentData = $combined->get($laptop->id);
             $cfScore = ($laptop->cf_score ?? $laptop->predicted_score ?? 0) * $cfWeight;
-            
+
             if ($currentData) {
                 // Jika laptop sudah ada dari CBF, tambahkan skor CF
                 $newScore = $currentData['score'] + $cfScore;
@@ -208,7 +208,7 @@ class HybridRecommender
                 ]);
             }
         }
-        
+
         // Urutkan berdasarkan skor tertinggi dan ekstrak laptop
         return $combined->sortByDesc('score')
             ->map(function ($item) {

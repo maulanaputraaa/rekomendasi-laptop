@@ -12,10 +12,10 @@ class DebugController extends Controller
     {
         $totalLaptops = Laptop::count();
         $totalBrands = Brand::count();
-        
+
         $laptops = Laptop::with('brand')->get();
-        
-        $laptopData = $laptops->map(function($laptop) {
+
+        $laptopData = $laptops->map(function ($laptop) {
             return [
                 'id' => $laptop->id,
                 'series' => $laptop->series,
@@ -24,7 +24,7 @@ class DebugController extends Controller
                 'price' => $laptop->price,
             ];
         });
-        
+
         return response()->json([
             'total_laptops' => $totalLaptops,
             'total_brands' => $totalBrands,
@@ -32,15 +32,15 @@ class DebugController extends Controller
             'message' => 'Debug data for laptop count issue'
         ]);
     }
-    
+
     public function dashboardDebug()
     {
         // Sama seperti DashboardController tapi return JSON
         $laptops = Laptop::with(['reviews', 'brand'])->get();
-        
-        $formattedLaptops = $laptops->map(function($laptop) {
+
+        $formattedLaptops = $laptops->map(function ($laptop) {
             $averageRating = $laptop->reviews->avg('rating');
-            
+
             return [
                 'id' => $laptop->id,
                 'name' => $laptop->series . ' ' . $laptop->model,
@@ -56,7 +56,7 @@ class DebugController extends Controller
                 'gpu' => $laptop->gpu,
             ];
         });
-        
+
         return response()->json([
             'total_count' => $laptops->count(),
             'formatted_count' => $formattedLaptops->count(),

@@ -18,6 +18,19 @@ npm-debug.log
 yarn-error.log
 /auth.json
 /.fleet
+
+# Development temporary files
+test_*.php
+test_*.txt
+analyze_*.php
+calculate_*.php
+check_*.php
+verify_*.php
+example_*.php
+*_IMPLEMENTATION.md
+*_DEBUG.md
+*_REPORT.md
+*_DOCUMENTATION.md
 /.idea
 /.nova
 /.vscode

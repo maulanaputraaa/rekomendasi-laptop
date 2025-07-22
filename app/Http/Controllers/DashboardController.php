@@ -13,11 +13,11 @@ class DashboardController extends Controller
     {
         // Ambil semua laptop dengan relasi yang diperlukan
         $laptops = Laptop::with(['reviews', 'brand'])->get();
-        
+
         // Format data laptop sesuai kebutuhan frontend
-        $formattedLaptops = $laptops->map(function($laptop) {
+        $formattedLaptops = $laptops->map(function ($laptop) {
             $averageRating = $laptop->reviews->avg('rating');
-            
+
             return [
                 'id' => $laptop->id,
                 'name' => $laptop->series . ' ' . $laptop->model, // Gabungkan series dan model

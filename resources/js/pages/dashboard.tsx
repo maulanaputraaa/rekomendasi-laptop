@@ -78,7 +78,7 @@ export default function Dashboard({ laptops }: Props) {
 
   // Data filter options (statis sesuai permintaan)
   const filterOptions = {
-    brands: ["ASUS", "Acer", "HP", "Lenovo",  "MSI"],
+    brands: ["ASUS", "Acer", "HP", "Lenovo", "MSI"],
     ram: ["4GB", "8GB", "16GB", "32GB", "64GB"],
     usage: ["Gaming", "Kantor", "Desain Grafis", "Programming", "Multimedia", "Sekolah"],
     processor: ["Intel", "AMD"]
@@ -88,11 +88,11 @@ export default function Dashboard({ laptops }: Props) {
     if (query.trim() || hasActiveFilters()) {
       // Gabungkan query pencarian dengan filter yang aktif
       const searchParams = new URLSearchParams()
-      
+
       if (query.trim()) {
         searchParams.append('query', query)
       }
-      
+
       // Tambahkan filter ke query string
       if (filters.brands.length > 0) {
         searchParams.append('brands', filters.brands.join(','))
@@ -110,18 +110,18 @@ export default function Dashboard({ laptops }: Props) {
         searchParams.append('price_min', filters.priceRange.min.toString())
         searchParams.append('price_max', filters.priceRange.max.toString())
       }
-      
+
       router.visit(`/search?${searchParams.toString()}`)
     }
   }
 
   const hasActiveFilters = () => {
-    return filters.brands.length > 0 || 
-           filters.ram.length > 0 || 
-           filters.usage.length > 0 || 
-           filters.processor.length > 0 ||
-           filters.priceRange.min > 0 || 
-           filters.priceRange.max < 50000000
+    return filters.brands.length > 0 ||
+      filters.ram.length > 0 ||
+      filters.usage.length > 0 ||
+      filters.processor.length > 0 ||
+      filters.priceRange.min > 0 ||
+      filters.priceRange.max < 50000000
   }
 
   const handleFilterChange = (category: keyof FilterState, value: string | { min: number; max: number }) => {
@@ -133,7 +133,7 @@ export default function Dashboard({ laptops }: Props) {
     } else {
       setFilters(prev => ({
         ...prev,
-        [category]: Array.isArray(prev[category]) 
+        [category]: Array.isArray(prev[category])
           ? (prev[category] as string[]).includes(value as string)
             ? (prev[category] as string[]).filter(item => item !== value)
             : [...(prev[category] as string[]), value as string]
@@ -384,8 +384,8 @@ export default function Dashboard({ laptops }: Props) {
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {filters.priceRange.min === 0 && filters.priceRange.max === 50000000 
-                          ? "Semua harga" 
+                        {filters.priceRange.min === 0 && filters.priceRange.max === 50000000
+                          ? "Semua harga"
                           : `${formatPrice(filters.priceRange.min)} - ${formatPrice(filters.priceRange.max)}`
                         }
                       </div>

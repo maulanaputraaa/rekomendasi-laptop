@@ -37,69 +37,69 @@ class CFRecommender
         $startTime = microtime(true);
         // Setup logging
         $logContext = [
-            'type' => 'CF', 
+            'type' => 'CF',
             'user_id' => $userId,
             'limit' => $limit,
             'timestamp' => now()->toISOString()
         ];
         Log::channel('recommendations')->info("👥 Memulai Collaborative Filtering", $logContext);
-        
+
         // Ambil data klik semua user jika tidak disediakan
         $clicksByUser = $clicksByUser ?? UserClick::all()->groupBy('user_id');
-        
+
         // Ambil data klik user target
         $targetClicks = UserClick::where('user_id', $userId)
             ->pluck('click_count', 'brand_id')
             ->toArray();
-        
+
         // Log data klik user target
         Log::channel('recommendations')->debug("Data klik user", $logContext + [
             'click_data' => $targetClicks,
             'total_brands' => count($targetClicks)
         ]);
-        
+
         // Jika tidak ada data klik, kembalikan koleksi kosong
         if (empty($targetClicks)) {
             Log::channel('recommendations')->warning("Tidak ada data klik", $logContext);
             return collect();
         }
-        
+
         // Hitung kesamaan dengan pengguna lain
         $similarities = $this->calculateUserSimilarities($targetClicks, $clicksByUser, $userId);
         $similarityStats = $this->calculateSimilarityStats($similarities);
         $maxSimilarity = $similarityStats['max'] ?: 1;
-        
+
         Log::channel('recommendations')->debug("Hasil similarity", $logContext + [
             'total_similar_users' => count($similarities),
             'similarity_range' => $similarityStats
         ]);
-        
+
         // Hitung maksimum klik per user
         $maxClicksByUser = $this->calculateMaxClicksPerUser($clicksByUser);
-        
+
         // Ambil semua laptop
         $allLaptops = Laptop::with('brand')->get()->keyBy('id');
-        
+
         // Hitung skor CF untuk setiap laptop
         $laptopScores = $this->calculateLaptopScores(
-            $targetClicks, 
+            $targetClicks,
             $similarities,
             $maxClicksByUser,
             $maxSimilarity,
             $allLaptops
         );
-        
+
         // Normalisasi skor
         $maxScore = max($laptopScores) ?: 1;
         $normalizedScores = array_map(fn($score) => $score / $maxScore, $laptopScores);
         arsort($normalizedScores);
-        
+
         // Ambil laptop teratas
         $laptopIds = array_keys($normalizedScores);
         if ($limit !== null) {
             $laptopIds = array_slice($laptopIds, 0, $limit);
         }
-        
+
         // Format hasil rekomendasi
         $recommendations = $allLaptops->whereIn('id', $laptopIds)
             ->map(function ($laptop) use ($normalizedScores) {
@@ -107,10 +107,10 @@ class CFRecommender
                 return $laptop;
             })
             ->sortByDesc('cf_score');
-        
+
         // Log hasil rekomendasi
         $processingTime = round((microtime(true) - $startTime) * 1000, 2);
-        
+
         Log::channel('recommendations')->info("✅ CF rekomendasi selesai", $logContext + [
             'results_count' => $recommendations->count(),
             'processing_time_ms' => $processingTime,
@@ -141,20 +141,20 @@ class CFRecommender
     {
         $similarities = [];
         $maxClick = max($targetClicks) ?: 1;
-        
+
         foreach ($clicksByUser as $otherUserId => $clicks) {
             // Lewati user target
             if ($otherUserId == $userId) continue;
-            
+
             $otherClicks = $clicks->pluck('click_count', 'brand_id')->toArray();
             $similarity = $this->cosineSimilarity($targetClicks, $otherClicks);
-            
+
             // Hanya simpan kesamaan yang signifikan
             if ($similarity > 0.1) {
                 $similarities[$otherUserId] = $similarity;
             }
         }
-        
+
         return $similarities;
     }
 
@@ -169,7 +169,7 @@ class CFRecommender
         if (empty($similarities)) {
             return ['min' => 0, 'max' => 0, 'avg' => 0];
         }
-        
+
         return [
             'min' => min($similarities),
             'max' => max($similarities),
@@ -186,12 +186,12 @@ class CFRecommender
     private function calculateMaxClicksPerUser(Collection $clicksByUser): array
     {
         $maxClicksByUser = [];
-        
+
         foreach ($clicksByUser as $otherUserId => $clicks) {
             $clicksArray = $clicks->pluck('click_count')->toArray();
             $maxClicksByUser[$otherUserId] = max($clicksArray) ?: 1;
         }
-        
+
         return $maxClicksByUser;
     }
 
@@ -218,23 +218,23 @@ class CFRecommender
     ): array {
         $maxClick = max($targetClicks) ?: 1;
         $laptopScores = [];
-        
+
         foreach ($allLaptops as $laptop) {
             // Hitung bobot brand berdasarkan klik user
-            $brandWeight = isset($targetClicks[$laptop->brand_id]) 
-                ? ($targetClicks[$laptop->brand_id] / $maxClick) 
+            $brandWeight = isset($targetClicks[$laptop->brand_id])
+                ? ($targetClicks[$laptop->brand_id] / $maxClick)
                 : 0;
-            
+
             // Hitung bobot rating laptop
             $rating = $this->getLaptopRating($laptop->id);
             $ratingWeight = $rating / 5.0;
-            
+
             // Hitung popularitas global laptop
             $globalWeight = $this->getGlobalPopularity($laptop->id);
-            
+
             // Base score (tanpa kontribusi pengguna mirip)
             $baseScore = ($brandWeight * 0.5) + ($ratingWeight * 0.25) + ($globalWeight * 0.25);
-            
+
             // Hitung bonus dari pengguna mirip
             $similarityBonus = $this->calculateSimilarityBonus(
                 $laptop->brand_id,
@@ -242,11 +242,11 @@ class CFRecommender
                 $maxClicksByUser,
                 $maxSimilarity
             );
-            
+
             // Gabungkan base score dan bonus
             $laptopScores[$laptop->id] = min($baseScore + $similarityBonus, 1.0);
         }
-        
+
         return $laptopScores;
     }
 
@@ -266,20 +266,20 @@ class CFRecommender
         float $maxSimilarity
     ): float {
         $bonus = 0;
-        
+
         foreach ($similarities as $otherUserId => $similarity) {
             // Jika user mirip pernah mengklik brand ini
             if (isset($maxClicksByUser[$otherUserId])) {
                 $otherClicks = $maxClicksByUser[$otherUserId];
-                
+
                 // Hitung kontribusi user ini
                 $contribution = ($otherClicks / $maxClicksByUser[$otherUserId])
-                              * ($similarity / $maxSimilarity);
-                
+                    * ($similarity / $maxSimilarity);
+
                 $bonus += ($contribution * 0.25);
             }
         }
-        
+
         return $bonus;
     }
 
@@ -308,13 +308,13 @@ class CFRecommender
     {
         $reviewCount = Review::where('laptop_id', $laptopId)->count();
         $avgRating = Review::where('laptop_id', $laptopId)->avg('rating') ?? 4.0;
-        
+
         // Komponen rating (60%)
         $ratingComponent = ($avgRating / 5.0) * 0.6;
-        
+
         // Komponen jumlah review (40%)
         $reviewComponent = 0.4 * log($reviewCount + 1) / log(50);
-        
+
         return min($ratingComponent + $reviewComponent, 1.0);
     }
 
@@ -339,27 +339,27 @@ class CFRecommender
         // Temukan brand yang sama-sama diklik
         $commonKeys = array_intersect(array_keys($vec1), array_keys($vec2));
         if (count($commonKeys) === 0) return 0;
-        
+
         // Hitung dot product
         $dotProduct = 0;
         foreach ($commonKeys as $key) {
             $dotProduct += $vec1[$key] * $vec2[$key];
         }
-        
+
         // Hitung magnitude vektor 1
         $magnitude1 = 0;
         foreach ($vec1 as $val) {
             $magnitude1 += $val * $val;
         }
         $magnitude1 = sqrt($magnitude1);
-        
+
         // Hitung magnitude vektor 2
         $magnitude2 = 0;
         foreach ($vec2 as $val) {
             $magnitude2 += $val * $val;
         }
         $magnitude2 = sqrt($magnitude2);
-        
+
         // Kembalikan kesamaan kosinus
         return ($magnitude1 && $magnitude2)
             ? $dotProduct / ($magnitude1 * $magnitude2)
