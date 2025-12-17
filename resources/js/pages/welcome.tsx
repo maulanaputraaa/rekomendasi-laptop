@@ -357,7 +357,7 @@ export default function Welcome() {
               <p className="text-sm text-muted-foreground">
                 © {new Date().getFullYear()} Laptop Finder
                 <span className="mx-2">•</span>
-                <span className="opacity-75">Dikembangkan oleh Putra, Support by MR PONGEX</span>
+                <span className="opacity-75">Dikembangkan oleh Putra</span>
               </p>
             </div>
           </div>
